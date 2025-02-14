@@ -1,13 +1,8 @@
 package Compiler;
 
-import Compiler.automata.*;
-
 public class Main {
     public static void main(String[] args) {
-        // Initialize error handler first as it will be needed by other components
-        ErrorHandler errorHandler = new ErrorHandler();
-        
-        // Test the lexer
+        // Test input code
         String code = """
                 global integer max = 100
                 
@@ -24,80 +19,26 @@ public class Main {
                 }
                 """;
 
-        System.out.println("=== Testing Lexical Analysis ===");
+        // Create lexer instance (now handles symbol table and automata internally)
         Lexer lexer = new Lexer(code);
+        
+        // Perform lexical analysis
+        System.out.println("=== Testing Lexical Analysis ===");
         lexer.tokenize();
         
+        // Display tokens
         System.out.println("Tokens:");
         for (Token token : lexer.getTokens()) {
             System.out.printf("%s -> %s (Line: %d)%n", 
                             token.type, token.value, token.lineNumber);
         }
 
-        // Test Symbol Table
-        System.out.println("\n=== Testing Symbol Table ===");
-        SymbolTable symbolTable = new SymbolTable(errorHandler);
-        
-        // Add global variable
-        symbolTable.add("max", "integer", true, 100);  // Combined add and setValue into one call
+        // Display symbol table (now maintained by lexer)
+        System.out.println("\n=== Symbol Table ===");
+        lexer.getSymbolTable().displayTable();
 
-        // Enter new scope
-        symbolTable.enterScope();
-        symbolTable.add("x", "integer", false, 10);    // Combined add and setValue into one call
-        symbolTable.add("pi", "decimal", false, 3.14159);  // Combined add and setValue into one call
-
-        // Add character and boolean variables
-        symbolTable.add("ch", "character", false, 'a');
-        symbolTable.add("isValid", "boolean", false, true);
-        symbolTable.add("result", "decimal", false, null);  // Variable declared but not initialized
-
-        // Test invalid operations to trigger error handling
-        symbolTable.add("123invalid", "integer", false, null);  // Should report error for invalid identifier
-        symbolTable.add("undefined", "integer", false, 42);     // Should report error for undefined symbol
-        symbolTable.add("pi", "decimal", false, "not a number"); // Should report type error
-        symbolTable.displayTable();
-
-        // Test Error Handler
-        System.out.println("\n=== Testing Error Handler ===");
-        
-        // Test automata
-        System.out.println("\n=== Testing Automata ===");
-     // Create a simple NFA for the pattern: (a|b)*abb
-     NFA nfa = new NFA();
-  // In Main.java or wherever the automata test is
-     State s0 = new State();
-     State s1 = new State();
-     State s2 = new State();
-     State s3 = new State();
-     State s4 = new State();
-
-     nfa.setStartState(s0);
-     nfa.addAcceptingState(s4);
-
-     // Add transitions for (a|b)*
-     nfa.addTransition(s0, 'a', s0);
-     nfa.addTransition(s0, 'b', s0);
-
-     // Add transitions for abb
-     nfa.addTransition(s0, 'a', s1);
-     nfa.addTransition(s1, 'b', s2);
-     nfa.addTransition(s2, 'b', s4);  // Changed s3 to s4 to reach accepting state
-
-     System.out.println("NFA Transition Table:");
-     nfa.displayTransitionTable();
-
-     DFA dfa = nfa.toDFA();
-     System.out.println("\nDFA Transition Table:");
-     dfa.displayTransitionTable();
-
-     // Test some inputs
-     String[] testInputs = {"abb", "aabb", "babb", "ab"};
-     for (String input : testInputs) {
-         System.out.printf("Testing input '%s': %s%n", 
-                         input, dfa.accepts(input) ? "Accepted" : "Rejected");
-     }
-        // Display all collected errors at the end
+        // Display any errors that occurred during lexical analysis
         System.out.println("\n=== Error Report ===");
-        errorHandler.displayErrors();
+        lexer.getErrorHandler().displayErrors();
     }
 }
