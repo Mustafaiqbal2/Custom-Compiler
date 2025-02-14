@@ -77,20 +77,4 @@ class SymbolTable {
     }
 }
 
-// Basic error handler
-class ErrorHandler {
-    public static void reportError(int line, String message) {
-        System.out.println("Error at line " + line + ": " + message);
-    }
-}
 
-// Finite Automata Placeholder
-class FiniteAutomata {
-    public void constructNFA(String regex) {
-        System.out.println("Constructing NFA for: " + regex);
-    }
-
-    public void constructDFA(String regex) {
-        System.out.println("Constructing DFA for: " + regex);
-    }
-}
