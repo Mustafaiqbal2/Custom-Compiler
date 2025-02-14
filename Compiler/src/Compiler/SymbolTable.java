@@ -23,33 +23,42 @@ public class SymbolTable {
     private final Map<String, Stack<Symbol>> symbols;
     private int currentScope;
     private final ErrorHandler errorHandler;
-
+    private Stack<Integer> scopeStack;
+    
     public SymbolTable(ErrorHandler errorHandler) {
         this.symbols = new HashMap<>();
+        this.scopeStack = new Stack<>();
         this.currentScope = 0;
+        this.scopeStack.push(currentScope);
         this.errorHandler = errorHandler;
     }
 
+
+
     public void enterScope() {
         currentScope++;
+        scopeStack.push(currentScope);
     }
 
     public void exitScope() {
-        // Remove all symbols in the current scope
-        Iterator<Map.Entry<String, Stack<Symbol>>> it = symbols.entrySet().iterator();
-        while (it.hasNext()) {
-            Map.Entry<String, Stack<Symbol>> entry = it.next();
-            Stack<Symbol> stack = entry.getValue();
-            
-            while (!stack.isEmpty() && stack.peek().scope == currentScope) {
-                stack.pop();
+        if (!scopeStack.isEmpty()) {
+            int scopeToRemove = scopeStack.pop();
+            // Remove all symbols in the current scope
+            Iterator<Map.Entry<String, Stack<Symbol>>> it = symbols.entrySet().iterator();
+            while (it.hasNext()) {
+                Map.Entry<String, Stack<Symbol>> entry = it.next();
+                Stack<Symbol> stack = entry.getValue();
+                
+                while (!stack.isEmpty() && stack.peek().scope == scopeToRemove) {
+                    stack.pop();
+                }
+                
+                if (stack.isEmpty()) {
+                    it.remove();
+                }
             }
-            
-            if (stack.isEmpty()) {
-                it.remove();
-            }
+            currentScope = scopeStack.isEmpty() ? 0 : scopeStack.peek();
         }
-        currentScope--;
     }
 
     public void add(String name, String type, boolean isGlobal, Object value) {
@@ -58,6 +67,20 @@ public class SymbolTable {
             errorHandler.reportError(0, 0, 
                 "Invalid identifier name: " + name, 
                 ErrorHandler.ErrorType.SEMANTIC);
+            return;
+        }
+
+        // Special handling for functions
+        if (type.equals("function")) {
+            // Functions can only be defined in global scope
+            if (currentScope != 0) {
+                errorHandler.reportError(0, 0,
+                    "Functions can only be defined in global scope",
+                    ErrorHandler.ErrorType.SEMANTIC);
+                return;
+            }
+            Symbol symbol = new Symbol(name, type, false, 0, value);
+            symbols.computeIfAbsent(name, k -> new Stack<>()).push(symbol);
             return;
         }
 
@@ -78,28 +101,56 @@ public class SymbolTable {
             }
         }
 
-        Symbol symbol = new Symbol(name, type, isGlobal, isGlobal ? 0 : currentScope, value);
+        // Add the symbol to the current scope
+        int scope = isGlobal ? 0 : currentScope;
+        Symbol symbol = new Symbol(name, type, isGlobal, scope, value);
         symbols.computeIfAbsent(name, k -> new Stack<>()).push(symbol);
     }
-
+    
     private boolean existsInCurrentScope(String name) {
         Stack<Symbol> stack = symbols.get(name);
-        return stack != null && !stack.isEmpty() && stack.peek().scope == currentScope;
+        if (stack == null || stack.isEmpty()) {
+            return false;
+        }
+        Symbol current = stack.peek();
+        return current.scope == currentScope || 
+               (current.isGlobal && current.scope == 0);
     }
 
     public boolean exists(String name) {
-        return symbols.containsKey(name) && !symbols.get(name).isEmpty();
+        Stack<Symbol> stack = symbols.get(name);
+        if (stack == null || stack.isEmpty()) {
+            return false;
+        }
+        
+        // Check if the symbol is visible in current scope
+        Symbol symbol = stack.peek();
+        return symbol.isGlobal || symbol.scope <= currentScope;
     }
 
     public Symbol lookup(String name) {
-        if (!exists(name)) {
+        Stack<Symbol> stack = symbols.get(name);
+        if (stack == null || stack.isEmpty()) {
             errorHandler.reportError(0, 0, 
                 "Undefined symbol: " + name, 
                 ErrorHandler.ErrorType.SEMANTIC);
             return null;
         }
-        return symbols.get(name).peek();
+
+        // Look for the symbol in the current scope or any enclosing scope
+        for (int i = stack.size() - 1; i >= 0; i--) {
+            Symbol symbol = stack.get(i);
+            if (symbol.isGlobal || symbol.scope <= currentScope) {
+                return symbol;
+            }
+        }
+
+        errorHandler.reportError(0, 0, 
+            "Symbol '" + name + "' not accessible in current scope", 
+            ErrorHandler.ErrorType.SEMANTIC);
+        return null;
     }
+
 
     public void setValue(String name, Object value) {
         if (!exists(name)) {

@@ -16,20 +16,24 @@ public class Lexer {
     private ErrorHandler errorHandler;
     private Map<String, NFA> nfaPatterns;
     private Map<String, DFA> dfaPatterns;
- // Add these fields to track declaration state
+    private boolean isFunctionDeclaration = false;
+    private String lastIdentifier = null;
+    private boolean isDeclaration = false;
+    private String lastDeclaredIdentifier = null;
     private String currentDeclType = null;
     private boolean isNextGlobal = false;
 
     private static class TokenPattern {
         final String type;
         final Pattern pattern;
+        final boolean skip;
 
         TokenPattern(String type, String regex, boolean skip) {
             this.type = type;
             this.pattern = Pattern.compile("^(" + regex + ")");
+            this.skip = skip;
         }
     }
-
     // Define all static patterns first
     private static final Map<String, String> REGEX_PATTERNS;
     private static final List<TokenPattern> TOKEN_PATTERNS;
@@ -95,28 +99,25 @@ public class Lexer {
     }
 
     public void tokenize() {
+        // Reset all state
+        currentDeclType = null;
+        isNextGlobal = false;
+        isFunctionDeclaration = false;
+        lastIdentifier = null;
+
         while (currentPosition < input.length()) {
-            boolean matched = false;
             String remaining = input.substring(currentPosition);
+            boolean matched = false;
 
-            // Handle scope changes
-            if (remaining.startsWith("{")) {
-                symbolTable.enterScope();
-            } else if (remaining.startsWith("}")) {
-                symbolTable.exitScope();
-            }
-
-            // Try each DFA for matching
             TokenMatch bestMatch = findLongestMatch(remaining);
-
+            
             if (bestMatch != null) {
                 processToken(bestMatch);
                 matched = true;
             }
 
             if (!matched) {
-                // Report error for unrecognized token
-                errorHandler.reportError(lineNumber, columnNumber, 
+                errorHandler.reportError(lineNumber, columnNumber,
                     "Invalid token at position " + currentPosition,
                     ErrorHandler.ErrorType.LEXICAL);
                 currentPosition++;
@@ -126,13 +127,17 @@ public class Lexer {
 
         tokens.add(new Token(TokenType.EOF, "", lineNumber, columnNumber));
     }
-
     
     private void processToken(TokenMatch match) {
         String type = match.type();
         String value = match.value();
 
-        if (type.equals("WHITESPACE")) {
+        TokenPattern matchedPattern = TOKEN_PATTERNS.stream()
+            .filter(p -> p.type.equals(type))
+            .findFirst()
+            .orElse(null);
+
+        if (matchedPattern != null && matchedPattern.skip) {
             handleWhitespace(value);
         } else {
             Token token = createToken(type, value);
@@ -145,6 +150,7 @@ public class Lexer {
         
         currentPosition += value.length();
     }
+
 
     private void handleWhitespace(String ws) {
         for (char c : ws.toCharArray()) {
@@ -220,37 +226,78 @@ public class Lexer {
 
         switch (token.type) {
             case GLOBAL -> {
-                // Mark next declaration as global
                 isNextGlobal = true;
             }
+            case FUNCTION -> {
+                isFunctionDeclaration = true;
+                currentDeclType = "function";
+            }
             case INTEGER, DECIMAL, BOOLEAN, CHARACTER -> {
-                // Store the current declaration type
                 currentDeclType = token.value.toLowerCase();
             }
             case IDENTIFIER -> {
-                if (currentDeclType != null) {
-                    // This is a declaration
+                if (isFunctionDeclaration) {
+                    // Handle function declaration
+                    symbolTable.add(token.value, "function", false, null);
+                    lastIdentifier = token.value;
+                } else if (currentDeclType != null) {
+                    // Handle variable declaration
                     symbolTable.add(token.value, currentDeclType, isNextGlobal, null);
-                    currentDeclType = null;  // Reset after use
-                    isNextGlobal = false;    // Reset global flag
+                    lastIdentifier = token.value;
+                } else {
+                    // This is a reference
+                    lastIdentifier = token.value;
+                    symbolTable.lookup(token.value);
                 }
             }
             case INTEGER_LITERAL, DECIMAL_LITERAL, BOOLEAN_LITERAL, CHARACTER_LITERAL -> {
-                // Find the last declared identifier and set its value
-                String lastIdentifier = getLastIdentifier();
-                if (lastIdentifier != null) {
+                if (lastIdentifier != null && currentDeclType != null) {
                     symbolTable.setValue(lastIdentifier, token.value);
+                    lastIdentifier = null;
+                    if (!isFunctionDeclaration) {
+                        currentDeclType = null;
+                        isNextGlobal = false;
+                    }
                 }
             }
+            case LPAREN -> {
+                if (isFunctionDeclaration) {
+                    symbolTable.enterScope();  // Enter function parameter scope
+                }
+            }
+            case RPAREN -> {
+                // No action needed for now
+            }
             case LBRACE -> {
-                symbolTable.enterScope();
+                if (!isNextGlobal) {  // Don't enter scope for global declarations
+                    symbolTable.enterScope();
+                    if (isFunctionDeclaration) {
+                        isFunctionDeclaration = false;
+                        currentDeclType = null;  // Reset after function block starts
+                    }
+                }
             }
             case RBRACE -> {
                 symbolTable.exitScope();
             }
-            default -> {}
+            case MULTIPLY, PLUS, MINUS, DIVIDE -> {
+                // Reset identifier but keep declaration state for expressions
+                lastIdentifier = null;
+            }
+            case ASSIGN -> {
+                // Keep the state for assignment
+            }
+            default -> {
+                if (currentDeclType != null && token.type != TokenType.ASSIGN) {
+                    // Reset all state if we hit something unexpected
+                    currentDeclType = null;
+                    isNextGlobal = false;
+                    lastIdentifier = null;
+                }
+            }
         }
     }
+
 
     private String getLastIdentifier() {
         for (int i = tokens.size() - 1; i >= 0; i--) {
