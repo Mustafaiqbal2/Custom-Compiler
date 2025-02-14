@@ -3,7 +3,8 @@ package Compiler;
 import java.util.*;
 
 public class SymbolTable {
-    private static class Symbol {
+	
+	private static class Symbol {
         String name;
         String type;
         boolean isGlobal;
@@ -18,12 +19,15 @@ public class SymbolTable {
         }
     }
 
-    private Map<String, Stack<Symbol>> symbols;
+	
+    private final Map<String, Stack<Symbol>> symbols;
     private int currentScope;
+    private final ErrorHandler errorHandler;
 
     public SymbolTable() {
         this.symbols = new HashMap<>();
         this.currentScope = 0;
+        this.errorHandler = ErrorHandler.getInstance();
     }
 
     public void enterScope() {
@@ -32,46 +36,79 @@ public class SymbolTable {
 
     public void exitScope() {
         // Remove all symbols in the current scope
-        symbols.values().forEach(stack -> {
-            while (!stack.isEmpty() && stack.peek().scope == currentScope) {
+        Iterator<Map.Entry<String, Stack<Symbol>>> it = symbols.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<String, Stack<Symbol>> entry = it.next();
+            Stack<Symbol> stack = entry.getValue();
+            
+            while (!stack.isEmpty() && stack.peek().getScope() == currentScope) {
                 stack.pop();
             }
-        });
+            
+            if (stack.isEmpty()) {
+                it.remove();
+            }
+        }
         currentScope--;
     }
 
     public void add(String name, String type, boolean isGlobal) {
-        Symbol symbol = new Symbol(name, type, isGlobal, isGlobal ? 0 : currentScope);
-        symbols.computeIfAbsent(name, k -> new Stack<>()).push(symbol);
-    }
+        if (!isValidIdentifier(name)) {
+            errorHandler.reportError(0, 0, "Invalid identifier: " + name);
+            return;
+        }
 
-    public boolean exists(String name) {
-        return symbols.containsKey(name) && !symbols.get(name).isEmpty();
+        Stack<Symbol> stack = symbols.computeIfAbsent(name, k -> new Stack<>());
+        
+        // Check if identifier is already defined in current scope
+        if (!stack.isEmpty() && stack.peek().getScope() == currentScope) {
+            errorHandler.reportError(0, 0, 
+                "Symbol '" + name + "' already defined in current scope");
+            return;
+        }
+
+        Symbol symbol = new Symbol(name, type, isGlobal, isGlobal ? 0 : currentScope);
+        stack.push(symbol);
     }
 
     public Symbol lookup(String name) {
-        if (!exists(name)) {
+        Stack<Symbol> stack = symbols.get(name);
+        if (stack == null || stack.isEmpty()) {
             return null;
         }
-        return symbols.get(name).peek();
+        return stack.peek();
+    }
+
+    private boolean isValidIdentifier(String name) {
+        return name.matches("[a-z]+");
     }
 
     public void setValue(String name, Object value) {
-        if (exists(name)) {
-            symbols.get(name).peek().value = value;
+        Symbol symbol = lookup(name);
+        if (symbol != null) {
+            // Type checking could be added here
+            symbol.setValue(value);
+        } else {
+            errorHandler.reportError(0, 0, "Undefined symbol: " + name);
         }
     }
 
     public void displayTable() {
-        System.out.println("Symbol Table:");
-        System.out.println("Name\t| Type\t| Scope\t| Global\t| Value");
+        System.out.println("\nSymbol Table Contents:");
+        System.out.println("Name\tType\tScope\tGlobal\tValue");
         System.out.println("-".repeat(50));
 
         symbols.forEach((name, stack) -> {
-            Symbol symbol = stack.peek();
-            System.out.printf("%s\t| %s\t| %d\t| %b\t| %s%n",
-                    name, symbol.type, symbol.scope,
-                    symbol.isGlobal, symbol.value);
+            if (!stack.isEmpty()) {
+                Symbol symbol = stack.peek();
+                System.out.printf("%s\t%s\t%d\t%b\t%s%n",
+                    symbol.getName(),
+                    symbol.getType(),
+                    symbol.getScope(),
+                    symbol.isGlobal(),
+                    symbol.getValue());
+            }
         });
     }
+}
 }

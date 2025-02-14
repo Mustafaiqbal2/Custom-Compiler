@@ -1,27 +1,25 @@
 package Compiler;
 
 public class Token {
-    private TokenType type;
-    private String value;
-    private int line;
-    private int column;
+    public final TokenType type;
+    public final String value;
+    public final int lineNumber;
+    public final int column;
     
-    public Token(TokenType type, String value, int line, int column) {
+    public Token(TokenType type, String value, int lineNumber, int column) {
         this.type = type;
         this.value = value;
-        this.line = line;
+        this.lineNumber = lineNumber;
         this.column = column;
     }
     
-    // Getters
-    public TokenType getType() { return type; }
-    public String getValue() { return value; }
-    public int getLine() { return line; }
-    public int getColumn() { return column; }
+    public Token(String type, String value, int lineNumber) {
+        this(TokenType.valueOf(type), value, lineNumber, 0);
+    }
     
     @Override
     public String toString() {
         return String.format("Token[type=%s, value='%s', position=(%d,%d)]", 
-                           type, value, line, column);
+                           type, value, lineNumber, column);
     }
 }
