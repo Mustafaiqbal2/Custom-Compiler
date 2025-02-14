@@ -12,7 +12,7 @@ public class Main {
                     integer x = 10
                     decimal pi = 3.14159
                     character ch = 'a'
-                    boolean isValid = true
+                    boolean isvalid = true
                     
                     // Arithmetic operations
                     decimal result = x * pi

@@ -7,7 +7,7 @@ import java.util.regex.Pattern;
 import Compiler.automata.*;
 
 public class Lexer {
-    private String input;
+	private String input;
     private List<Token> tokens;
     private int lineNumber;
     private int columnNumber;
@@ -28,25 +28,41 @@ public class Lexer {
             this.skip = skip;
         }
     }
-    // Simplified patterns that are guaranteed to work with the NFA converter
- // Define token patterns with proper precedence
-    // Regex patterns for NFA/DFA conversion
+
+    // Define all static patterns first
     private static final Map<String, String> REGEX_PATTERNS;
+    private static final List<TokenPattern> TOKEN_PATTERNS;
+
     static {
+        // Initialize REGEX_PATTERNS first
         REGEX_PATTERNS = new HashMap<>();
-        REGEX_PATTERNS.put("WHITESPACE", "(\\s)");
+        REGEX_PATTERNS.put("WHITESPACE", "([ \t\r\n])");
         REGEX_PATTERNS.put("KEYWORD", "(global|function|var|integer|decimal|boolean|character)");
         REGEX_PATTERNS.put("IDENTIFIER", "[a-z][a-z0-9]*");
         REGEX_PATTERNS.put("INTEGER", "[0-9]+");
-        REGEX_PATTERNS.put("DECIMAL", "[0-9]+\\.[0-9]+");
+        REGEX_PATTERNS.put("DECIMAL", "[0-9]+[.][0-9]+");
         REGEX_PATTERNS.put("BOOLEAN", "(true|false)");
         REGEX_PATTERNS.put("CHARACTER", "'[a-z]'");
         REGEX_PATTERNS.put("OPERATOR", "[+\\-*/%=^]");
         REGEX_PATTERNS.put("DELIMITER", "[(){}]");
         REGEX_PATTERNS.put("SINGLECOMMENT", "//[^\n]*");
-        REGEX_PATTERNS.put("MULTICOMMENT", "/\\*[\\s\\S]*?\\*/");
+        REGEX_PATTERNS.put("MULTICOMMENT", "/[*]([^*]|[*]+[^*/])*[*]+/");
+
+        // Initialize TOKEN_PATTERNS after
+        TOKEN_PATTERNS = new ArrayList<>();
+        TOKEN_PATTERNS.add(new TokenPattern("WHITESPACE", "[ \t\r\n]+", true));
+        TOKEN_PATTERNS.add(new TokenPattern("MULTI_LINE_COMMENT", "/[*]([^*]|[*]+[^*/])*[*]+/", false));
+        TOKEN_PATTERNS.add(new TokenPattern("SINGLE_LINE_COMMENT", "//[^\n]*", false));
+        TOKEN_PATTERNS.add(new TokenPattern("KEYWORD", "\\b(global|function|var|integer|decimal|boolean|character)\\b", false));
+        TOKEN_PATTERNS.add(new TokenPattern("DECIMAL_LITERAL", "\\b\\d+\\.\\d+\\b", false));
+        TOKEN_PATTERNS.add(new TokenPattern("INTEGER_LITERAL", "\\b\\d+\\b", false));
+        TOKEN_PATTERNS.add(new TokenPattern("BOOLEAN_LITERAL", "\\b(true|false)\\b", false));
+        TOKEN_PATTERNS.add(new TokenPattern("CHARACTER_LITERAL", "'[a-z]'", false));
+        TOKEN_PATTERNS.add(new TokenPattern("IDENTIFIER", "\\b[a-z][a-z0-9]*\\b", false));
+        TOKEN_PATTERNS.add(new TokenPattern("OPERATOR", "[+\\-*/%^=]", false));
+        TOKEN_PATTERNS.add(new TokenPattern("DELIMITER", "[(){}]", false));
     }
-    
+
     public Lexer(String input) {
         this.input = input;
         this.tokens = new ArrayList<>();
@@ -59,31 +75,14 @@ public class Lexer {
         this.dfaPatterns = new HashMap<>();
         convertRegexToDFA();
     }
-    // Token patterns for direct regex matching
-    private static final List<TokenPattern> TOKEN_PATTERNS = new ArrayList<>();
-    static {
-        TOKEN_PATTERNS.add(new TokenPattern("WHITESPACE", "[ \t\r\n]+", true));
-        TOKEN_PATTERNS.add(new TokenPattern("MULTI_LINE_COMMENT", "/\\*[\\s\\S]*?\\*/", false));
-        TOKEN_PATTERNS.add(new TokenPattern("SINGLE_LINE_COMMENT", "//[^\n]*", false));
-        TOKEN_PATTERNS.add(new TokenPattern("KEYWORD", "\\b(global|function|var|integer|decimal|boolean|character)\\b", false));
-        TOKEN_PATTERNS.add(new TokenPattern("DECIMAL_LITERAL", "\\b\\d+\\.\\d+\\b", false));
-        TOKEN_PATTERNS.add(new TokenPattern("INTEGER_LITERAL", "\\b\\d+\\b", false));
-        TOKEN_PATTERNS.add(new TokenPattern("BOOLEAN_LITERAL", "\\b(true|false)\\b", false));
-        TOKEN_PATTERNS.add(new TokenPattern("CHARACTER_LITERAL", "'[a-z]'", false));
-        TOKEN_PATTERNS.add(new TokenPattern("IDENTIFIER", "\\b[a-z][a-z0-9]*\\b", false));
-        TOKEN_PATTERNS.add(new TokenPattern("OPERATOR", "[+\\-*/%^=]", false));
-        TOKEN_PATTERNS.add(new TokenPattern("DELIMITER", "[(){}]", false));
-    }
 
     private void convertRegexToDFA() {
         RegexToNFAConverter converter = new RegexToNFAConverter();
         
-        // Convert each regex pattern to NFA using Thompson's Construction
         for (Map.Entry<String, String> entry : REGEX_PATTERNS.entrySet()) {
             try {
                 NFA nfa = converter.convert(entry.getValue());
                 nfaPatterns.put(entry.getKey(), nfa);
-                // Convert NFA to DFA using subset construction
                 DFA dfa = nfa.toDFA();
                 dfaPatterns.put(entry.getKey(), dfa);
             } catch (Exception e) {
@@ -217,34 +216,43 @@ public class Lexer {
 
     private void updateSymbolTable(Token token) {
         switch (token.type) {
-            case IDENTIFIER -> {
+            case IDENTIFIER:
                 if (isDeclaration()) {
                     String type = getCurrentDeclarationType();
                     boolean isGlobal = isInGlobalScope();
-                    symbolTable.add(token.value, type, isGlobal, null);
+                    if (type != null) {
+                        symbolTable.add(token.value, type, isGlobal, null);
+                    }
                 }
-            }
-            case INTEGER_LITERAL, DECIMAL_LITERAL, BOOLEAN_LITERAL, CHARACTER_LITERAL -> {
+                break;
+            case INTEGER_LITERAL:
+            case DECIMAL_LITERAL:
+            case BOOLEAN_LITERAL:
+            case CHARACTER_LITERAL:
                 String lastIdentifier = getLastIdentifier();
                 if (lastIdentifier != null) {
                     symbolTable.setValue(lastIdentifier, token.value);
                 }
-            }
-            case FUNCTION -> symbolTable.enterScope();
-            case RBRACE -> symbolTable.exitScope();
-            default -> {}
+                break;
+            case LBRACE:
+                symbolTable.enterScope();
+                break;
+            case RBRACE:
+                symbolTable.exitScope();
+                break;
+            default:
+                break;
         }
     }
-    
+
     private boolean isDeclaration() {
         if (tokens.isEmpty()) return false;
         Token lastToken = tokens.get(tokens.size() - 1);
-        return switch (lastToken.type) {
-            case INTEGER, DECIMAL, BOOLEAN, CHARACTER -> true;
-            default -> false;
-        };
+        return lastToken.type == TokenType.INTEGER ||
+               lastToken.type == TokenType.DECIMAL ||
+               lastToken.type == TokenType.BOOLEAN ||
+               lastToken.type == TokenType.CHARACTER;
     }
-
     private String getCurrentDeclarationType() {
         if (tokens.isEmpty()) return null;
         Token lastToken = tokens.get(tokens.size() - 1);
