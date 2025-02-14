@@ -61,41 +61,40 @@ public class Main {
         
         // Test automata
         System.out.println("\n=== Testing Automata ===");
-        try {
-            // Create a simple NFA for the pattern: (a|b)*abb
-            NFA nfa = new NFA();
-            State s0 = new State();
-            State s1 = new State();
-            State s2 = new State();
-            State s3 = new State();
+     // Create a simple NFA for the pattern: (a|b)*abb
+     NFA nfa = new NFA();
+  // In Main.java or wherever the automata test is
+     State s0 = new State();
+     State s1 = new State();
+     State s2 = new State();
+     State s3 = new State();
+     State s4 = new State();
 
-            nfa.setStartState(s0);
-            nfa.addAcceptingState(s3);
+     nfa.setStartState(s0);
+     nfa.addAcceptingState(s4);
 
-            s0.addTransition('a', s0);
-            s0.addTransition('b', s0);
-            s0.addTransition('a', s1);
-            s1.addTransition('b', s2);
-            s2.addTransition('b', s3);
+     // Add transitions for (a|b)*
+     nfa.addTransition(s0, 'a', s0);
+     nfa.addTransition(s0, 'b', s0);
 
-            System.out.println("NFA Transition Table:");
-            nfa.displayTransitionTable();
+     // Add transitions for abb
+     nfa.addTransition(s0, 'a', s1);
+     nfa.addTransition(s1, 'b', s2);
+     nfa.addTransition(s2, 'b', s4);  // Changed s3 to s4 to reach accepting state
 
-            DFA dfa = nfa.toDFA();
-            System.out.println("\nDFA Transition Table:");
-            dfa.displayTransitionTable();
+     System.out.println("NFA Transition Table:");
+     nfa.displayTransitionTable();
 
-            // Test some inputs
-            String[] testInputs = {"abb", "aabb", "babb", "ab"};
-            for (String input : testInputs) {
-                System.out.printf("Testing input '%s': %s%n", 
-                                input, dfa.accepts(input) ? "Accepted" : "Rejected");
-            }
-        } catch (Exception e) {
-            errorHandler.reportError(0, 0, "Automata error: " + e.getMessage(), 
-                                   ErrorHandler.ErrorType.SEMANTIC);
-        }
+     DFA dfa = nfa.toDFA();
+     System.out.println("\nDFA Transition Table:");
+     dfa.displayTransitionTable();
 
+     // Test some inputs
+     String[] testInputs = {"abb", "aabb", "babb", "ab"};
+     for (String input : testInputs) {
+         System.out.printf("Testing input '%s': %s%n", 
+                         input, dfa.accepts(input) ? "Accepted" : "Rejected");
+     }
         // Display all collected errors at the end
         System.out.println("\n=== Error Report ===");
         errorHandler.displayErrors();

@@ -10,18 +10,18 @@ public class Lexer {
     private int columnNumber;
 
     private static final Pattern TOKEN_PATTERNS = Pattern.compile(
-            "(?<WHITESPACE>\\s+)|" +
-            "(?<KEYWORD>global|function|var|integer|decimal|boolean|character)|" +
-            "(?<IDENTIFIER>[a-z][a-z]*)|" +
-            "(?<INTEGER>\\d+)|" +
-            "(?<DECIMAL>\\d+\\.\\d{1,5})|" +
-            "(?<BOOLEAN>true|false)|" +
-            "(?<CHARACTER>'[a-z]')|" +
-            "(?<OPERATOR>[+\\-*/%=^])|" +
-            "(?<DELIMITER>[(){}])|" +
-            "(?<SINGLECOMMENT>//[^\\n]*)|" +
-            "(?<MULTICOMMENT>/\\*[^*]*\\*+(?:[^/*][^*]*\\*+)*/)" // Removed the trailing '>' that was causing the error
-        );
+    	    "(?<WHITESPACE>\\s+)|" +
+    	    "(?<MULTICOMMENT>/\\*[^*]*\\*+(?:[^/*][^*]*\\*+)*/)|" +
+    	    "(?<SINGLECOMMENT>//.*)|" +  // Changed to capture entire line
+    	    "(?<KEYWORD>global|function|var|integer|decimal|boolean|character)|" +
+    	    "(?<BOOLEANLITERAL>true|false)|" +
+    	    "(?<IDENTIFIER>[a-zA-Z][a-zA-Z0-9]*)|" +  // Updated to allow more valid identifiers
+    	    "(?<DECIMALLITERAL>\\d+\\.\\d+)|" +
+    	    "(?<INTEGER>\\d+)|" +
+    	    "(?<CHARACTER>'[a-z]')|" +
+    	    "(?<OPERATOR>[+\\-*/%=^])|" +
+    	    "(?<DELIMITER>[(){}])"
+    	);
 
     public Lexer(String input) {
         this.input = input;
@@ -48,25 +48,43 @@ public class Lexer {
                     }
                 }
             }
+            else if (matcher.group("MULTICOMMENT") != null) {
+                tokens.add(new Token(TokenType.MULTI_LINE_COMMENT, 
+                                   matcher.group("MULTICOMMENT"), lineNumber, columnNumber));
+                // Count newlines in multiline comment
+                String comment = matcher.group("MULTICOMMENT");
+                for (char c : comment.toCharArray()) {
+                    if (c == '\n') {
+                        lineNumber++;
+                        columnNumber = 1;
+                    }
+                }
+            }
+            else if (matcher.group("SINGLECOMMENT") != null) {
+                tokens.add(new Token(TokenType.SINGLE_LINE_COMMENT, 
+                                   matcher.group("SINGLECOMMENT"), lineNumber, columnNumber));
+                lineNumber++; // Move to next line after single line comment
+                columnNumber = 1;
+            }
             else if (matcher.group("KEYWORD") != null) {
                 tokens.add(new Token(TokenType.valueOf(matcher.group("KEYWORD").toUpperCase()), 
                                    matcher.group("KEYWORD"), lineNumber, columnNumber));
+            }
+            else if (matcher.group("BOOLEANLITERAL") != null) {
+                tokens.add(new Token(TokenType.BOOLEAN_LITERAL, 
+                                   matcher.group("BOOLEANLITERAL"), lineNumber, columnNumber));
             }
             else if (matcher.group("IDENTIFIER") != null) {
                 tokens.add(new Token(TokenType.IDENTIFIER, 
                                    matcher.group("IDENTIFIER"), lineNumber, columnNumber));
             }
+            else if (matcher.group("DECIMALLITERAL") != null) {
+                tokens.add(new Token(TokenType.DECIMAL_LITERAL, 
+                                   matcher.group("DECIMALLITERAL"), lineNumber, columnNumber));
+            }
             else if (matcher.group("INTEGER") != null) {
                 tokens.add(new Token(TokenType.INTEGER_LITERAL, 
                                    matcher.group("INTEGER"), lineNumber, columnNumber));
-            }
-            else if (matcher.group("DECIMAL") != null) {
-                tokens.add(new Token(TokenType.DECIMAL_LITERAL, 
-                                   matcher.group("DECIMAL"), lineNumber, columnNumber));
-            }
-            else if (matcher.group("BOOLEAN") != null) {
-                tokens.add(new Token(TokenType.BOOLEAN_LITERAL, 
-                                   matcher.group("BOOLEAN"), lineNumber, columnNumber));
             }
             else if (matcher.group("CHARACTER") != null) {
                 tokens.add(new Token(TokenType.CHARACTER_LITERAL, 
@@ -96,18 +114,6 @@ public class Lexer {
                     default -> TokenType.UNKNOWN;
                 };
                 tokens.add(new Token(type, delim, lineNumber, columnNumber));
-            }
-            else if (matcher.group("SINGLE_COMMENT") != null) {
-                tokens.add(new Token(TokenType.SINGLE_LINE_COMMENT, 
-                                   matcher.group("SINGLE_COMMENT"), lineNumber, columnNumber));
-            }
-            else if (matcher.group("MULTI_COMMENT") != null) {
-                tokens.add(new Token(TokenType.MULTI_LINE_COMMENT, 
-                                   matcher.group("MULTI_COMMENT"), lineNumber, columnNumber));
-            }
-            else {
-                tokens.add(new Token(TokenType.UNKNOWN, 
-                                   matcher.group(), lineNumber, columnNumber));
             }
             
             lastEnd = matcher.end();

@@ -4,90 +4,99 @@ import java.util.*;
 
 public class NFA {
     private State startState;
-    private Set<State> states;
     private Set<State> acceptingStates;
+    private Set<State> allStates;
     private Set<Character> alphabet;
 
     public NFA() {
-        this.states = new HashSet<>();
         this.acceptingStates = new HashSet<>();
+        this.allStates = new HashSet<>();
         this.alphabet = new HashSet<>();
-    }
-
-    public void addState(State state) {
-        states.add(state);
     }
 
     public void setStartState(State state) {
         this.startState = state;
-        addState(state);
+        allStates.add(state);
     }
 
     public void addAcceptingState(State state) {
         state.setAccepting(true);
         acceptingStates.add(state);
-        addState(state);
+        allStates.add(state);
     }
 
-    public Set<State> getEpsilonClosure(Set<State> states) {
-        Stack<State> stack = new Stack<>();
-        Set<State> closure = new HashSet<>(states);
-        states.forEach(stack::push);
+    public void addTransition(State from, char symbol, State to) {
+        from.addTransition(symbol, to);
+        alphabet.add(symbol);
+        allStates.add(from);
+        allStates.add(to);
+    }
 
-        while (!stack.empty()) {
-            State current = stack.pop();
-            Set<State> epsilonTransitions = current.getTransitions('\u0000');
-            
-            for (State nextState : epsilonTransitions) {
-                if (closure.add(nextState)) {
-                    stack.push(nextState);
-                }
-            }
+    public void displayTransitionTable() {
+        System.out.println("NFA Transition Table:");
+        System.out.printf("%-10s|", "State");
+        for (char c : alphabet) {
+            System.out.printf(" %-15s|", c);
         }
-        return closure;
+        System.out.println("\n" + "-".repeat(10 + alphabet.size() * 16));
+
+        List<State> sortedStates = new ArrayList<>(allStates);
+        sortedStates.sort(Comparator.comparingInt(State::getId));
+
+        for (State state : sortedStates) {
+            System.out.printf("%-8s%s |", state.getId(), state.isAccepting() ? "*" : " ");
+            for (char c : alphabet) {
+                Set<State> transitions = state.getTransitions(c);
+                String transStr = transitions.isEmpty() ? "-" : 
+                    transitions.stream()
+                             .map(s -> String.valueOf(s.getId()))
+                             .reduce((a, b) -> a + "," + b)
+                             .orElse("-");
+                System.out.printf(" %-15s|", transStr);
+            }
+            System.out.println();
+        }
     }
 
     public DFA toDFA() {
+        // Subset construction algorithm
         DFA dfa = new DFA();
         Map<Set<State>, State> dfaStates = new HashMap<>();
-        Queue<Set<State>> unprocessedStates = new LinkedList<>();
+        Queue<Set<State>> unprocessed = new LinkedList<>();
 
-        // Start with epsilon closure of NFA start state
-        Set<State> initialStates = getEpsilonClosure(Set.of(startState));
-        State dfaStartState = new State();
-        dfaStates.put(initialStates, dfaStartState);
-        unprocessedStates.offer(initialStates);
-        dfa.setStartState(dfaStartState);
+        // Start with ε-closure of start state
+        Set<State> initialSet = epsilonClosure(Set.of(startState));
+        State dfaStart = new State();
+        dfaStates.put(initialSet, dfaStart);
+        unprocessed.add(initialSet);
+        dfa.setStartState(dfaStart);
 
-        while (!unprocessedStates.isEmpty()) {
-            Set<State> currentStates = unprocessedStates.poll();
-            State currentDFAState = dfaStates.get(currentStates);
+        // If initial set contains any accepting state, make DFA start state accepting
+        if (initialSet.stream().anyMatch(State::isAccepting)) {
+            dfa.addAcceptingState(dfaStart);
+        }
 
-            // Check if this set of NFA states contains an accepting state
-            if (currentStates.stream().anyMatch(s -> acceptingStates.contains(s))) {
-                dfa.addAcceptingState(currentDFAState);
-            }
+        while (!unprocessed.isEmpty()) {
+            Set<State> currentSet = unprocessed.poll();
+            State currentDFAState = dfaStates.get(currentSet);
 
-            // Process each symbol in the alphabet
             for (char symbol : alphabet) {
-                Set<State> nextStates = new HashSet<>();
-                
-                // Get all possible transitions for the current set of states
-                for (State state : currentStates) {
-                    Set<State> transitions = state.getTransitions(symbol);
-                    nextStates.addAll(transitions);
-                }
+                // Create a final reference to the next set of states
+                final Set<State> nextStateSet = epsilonClosure(move(currentSet, symbol));
 
-                // Include epsilon transitions
-                nextStates = getEpsilonClosure(nextStates);
-
-                if (!nextStates.isEmpty()) {
-                    State nextDFAState = dfaStates.computeIfAbsent(nextStates, k -> new State());
-                    currentDFAState.addTransition(symbol, nextDFAState);
-                    
-                    if (!dfaStates.containsKey(nextStates)) {
-                        unprocessedStates.offer(nextStates);
+                if (!nextStateSet.isEmpty()) {
+                    // Create or get the DFA state for this set
+                    State nextDFAState = dfaStates.get(nextStateSet);
+                    if (nextDFAState == null) {
+                        nextDFAState = new State();
+                        if (nextStateSet.stream().anyMatch(State::isAccepting)) {
+                            dfa.addAcceptingState(nextDFAState);
+                        }
+                        dfaStates.put(nextStateSet, nextDFAState);
+                        unprocessed.add(nextStateSet);
                     }
+
+                    dfa.addTransition(currentDFAState, symbol, nextDFAState);
                 }
             }
         }
@@ -95,28 +104,28 @@ public class NFA {
         return dfa;
     }
 
-    public void displayTransitionTable() {
-        System.out.println("NFA Transition Table:");
-        System.out.println("State\t| " + String.join("\t| ", alphabet.stream()
-                                                    .map(String::valueOf)
-                                                    .toArray(String[]::new)));
-        System.out.println("-".repeat(50));
+    private Set<State> epsilonClosure(Set<State> states) {
+        Set<State> closure = new HashSet<>(states);
+        Stack<State> stack = new Stack<>();
+        stack.addAll(states);
 
-        for (State state : states) {
-            StringBuilder row = new StringBuilder();
-            row.append(state.getId()).append(state.isAccepting() ? "*" : "")
-               .append("\t| ");
-
-            for (char symbol : alphabet) {
-                Set<State> transitions = state.getTransitions(symbol);
-                String transitionStr = transitions.isEmpty() ? "-" :
-                    transitions.stream()
-                             .map(s -> String.valueOf(s.getId()))
-                             .reduce((a, b) -> a + "," + b)
-                             .orElse("-");
-                row.append(transitionStr).append("\t| ");
+        while (!stack.isEmpty()) {
+            State current = stack.pop();
+            for (State next : current.getTransitions('\0')) {
+                if (closure.add(next)) {
+                    stack.push(next);
+                }
             }
-            System.out.println(row);
         }
+
+        return closure;
+    }
+
+    private Set<State> move(Set<State> states, char symbol) {
+        Set<State> result = new HashSet<>();
+        for (State state : states) {
+            result.addAll(state.getTransitions(symbol));
+        }
+        return result;
     }
 }
