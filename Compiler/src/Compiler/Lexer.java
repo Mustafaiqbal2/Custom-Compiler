@@ -227,23 +227,29 @@ public class Lexer {
         switch (token.type) {
             case GLOBAL -> {
                 isNextGlobal = true;
+                isDeclaration = false; // Reset declaration state
             }
             case FUNCTION -> {
                 isFunctionDeclaration = true;
                 currentDeclType = "function";
+                isDeclaration = false; // Reset declaration state
             }
             case INTEGER, DECIMAL, BOOLEAN, CHARACTER -> {
                 currentDeclType = token.value.toLowerCase();
+                isDeclaration = true; // This is a declaration
             }
             case IDENTIFIER -> {
                 if (isFunctionDeclaration) {
                     // Handle function declaration
                     symbolTable.add(token.value, "function", false, null);
                     lastIdentifier = token.value;
-                } else if (currentDeclType != null) {
+                    lastDeclaredIdentifier = token.value;
+                } else if (isDeclaration && currentDeclType != null) {
                     // Handle variable declaration
                     symbolTable.add(token.value, currentDeclType, isNextGlobal, null);
                     lastIdentifier = token.value;
+                    lastDeclaredIdentifier = token.value;
+                    // Don't reset isDeclaration here as we might have a value coming
                 } else {
                     // This is a reference
                     lastIdentifier = token.value;
@@ -251,54 +257,71 @@ public class Lexer {
                 }
             }
             case INTEGER_LITERAL, DECIMAL_LITERAL, BOOLEAN_LITERAL, CHARACTER_LITERAL -> {
-                if (lastIdentifier != null && currentDeclType != null) {
+                if (lastIdentifier != null) {
                     symbolTable.setValue(lastIdentifier, token.value);
-                    lastIdentifier = null;
-                    if (!isFunctionDeclaration) {
-                        currentDeclType = null;
-                        isNextGlobal = false;
+                    if (lastIdentifier.equals(lastDeclaredIdentifier)) {
+                        // Only reset states if we've finished setting a declared variable
+                        lastIdentifier = null;
+                        lastDeclaredIdentifier = null;
+                        isDeclaration = false;
+                        if (!isFunctionDeclaration) {
+                            currentDeclType = null;
+                            isNextGlobal = false;
+                        }
                     }
                 }
             }
             case LPAREN -> {
                 if (isFunctionDeclaration) {
-                    symbolTable.enterScope();  // Enter function parameter scope
+                    symbolTable.enterScope();  // Enter parameter scope
                 }
             }
             case RPAREN -> {
-                // No action needed for now
+                // Keep function parameter scope open
             }
             case LBRACE -> {
-                if (!isNextGlobal) {  // Don't enter scope for global declarations
-                    symbolTable.enterScope();
+                if (!isNextGlobal) {  // Don't enter new scope for global declarations
                     if (isFunctionDeclaration) {
+                        // We're already in function parameter scope, no need for new scope
                         isFunctionDeclaration = false;
-                        currentDeclType = null;  // Reset after function block starts
+                        currentDeclType = null;
+                    } else {
+                        symbolTable.enterScope();
                     }
                 }
             }
             case RBRACE -> {
                 symbolTable.exitScope();
+                isDeclaration = false;
+                currentDeclType = null;
+                lastIdentifier = null;
+                lastDeclaredIdentifier = null;
             }
             case MULTIPLY, PLUS, MINUS, DIVIDE -> {
-                // Reset identifier but keep declaration state for expressions
-                lastIdentifier = null;
+                // In an expression context
+                if (!isDeclaration) {
+                    lastIdentifier = null;  // Only reset if not in declaration
+                }
             }
             case ASSIGN -> {
-                // Keep the state for assignment
+                // Keep states for assignment
             }
             default -> {
-                if (currentDeclType != null && token.type != TokenType.ASSIGN) {
-                    // Reset all state if we hit something unexpected
-                    currentDeclType = null;
-                    isNextGlobal = false;
-                    lastIdentifier = null;
+                if (!token.type.toString().contains("COMMENT")) {
+                    if (currentDeclType != null && 
+                        token.type != TokenType.ASSIGN && 
+                        !isDeclaration) {
+                        // Reset states only if we're not in a declaration
+                        currentDeclType = null;
+                        isNextGlobal = false;
+                        lastIdentifier = null;
+                        lastDeclaredIdentifier = null;
+                        isDeclaration = false;
+                    }
                 }
             }
         }
     }
-
-
     private String getLastIdentifier() {
         for (int i = tokens.size() - 1; i >= 0; i--) {
             Token t = tokens.get(i);
