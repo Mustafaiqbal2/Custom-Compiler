@@ -39,21 +39,22 @@ public class Main {
         SymbolTable symbolTable = new SymbolTable(errorHandler);
         
         // Add global variable
-        symbolTable.add("max", "integer", true);
-        symbolTable.setValue("max", 100);
-        
+        symbolTable.add("max", "integer", true, 100);  // Combined add and setValue into one call
+
         // Enter new scope
         symbolTable.enterScope();
-        symbolTable.add("x", "integer", false);
-        symbolTable.add("pi", "decimal", false);
-        symbolTable.setValue("x", 10);
-        symbolTable.setValue("pi", 3.14159);
-        
+        symbolTable.add("x", "integer", false, 10);    // Combined add and setValue into one call
+        symbolTable.add("pi", "decimal", false, 3.14159);  // Combined add and setValue into one call
+
+        // Add character and boolean variables
+        symbolTable.add("ch", "character", false, 'a');
+        symbolTable.add("isValid", "boolean", false, true);
+        symbolTable.add("result", "decimal", false, null);  // Variable declared but not initialized
+
         // Test invalid operations to trigger error handling
-        symbolTable.add("123invalid", "integer", false); // Should report error
-        symbolTable.setValue("undefined", 42); // Should report error
-        symbolTable.setValue("pi", "not a number"); // Should report type error
-        
+        symbolTable.add("123invalid", "integer", false, null);  // Should report error for invalid identifier
+        symbolTable.add("undefined", "integer", false, 42);     // Should report error for undefined symbol
+        symbolTable.add("pi", "decimal", false, "not a number"); // Should report type error
         symbolTable.displayTable();
 
         // Test Error Handler

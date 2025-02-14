@@ -11,11 +11,12 @@ public class SymbolTable {
         Object value;
         int scope;
 
-        Symbol(String name, String type, boolean isGlobal, int scope) {
+        Symbol(String name, String type, boolean isGlobal, int scope, Object value) {
             this.name = name;
             this.type = type;
             this.isGlobal = isGlobal;
             this.scope = scope;
+            this.value = value;
         }
     }
 
@@ -51,7 +52,7 @@ public class SymbolTable {
         currentScope--;
     }
 
-    public void add(String name, String type, boolean isGlobal) {
+    public void add(String name, String type, boolean isGlobal, Object value) {
         // Validate identifier
         if (!PatternMatcher.isValidIdentifier(name)) {
             errorHandler.reportError(0, 0, 
@@ -68,7 +69,16 @@ public class SymbolTable {
             return;
         }
 
-        Symbol symbol = new Symbol(name, type, isGlobal, isGlobal ? 0 : currentScope);
+        // Validate value if provided
+        if (value != null) {
+            String validationError = validateValue(type, value);
+            if (validationError != null) {
+                errorHandler.reportError(0, 0, validationError, ErrorHandler.ErrorType.SEMANTIC);
+                return;
+            }
+        }
+
+        Symbol symbol = new Symbol(name, type, isGlobal, isGlobal ? 0 : currentScope, value);
         symbols.computeIfAbsent(name, k -> new Stack<>()).push(symbol);
     }
 
@@ -83,6 +93,9 @@ public class SymbolTable {
 
     public Symbol lookup(String name) {
         if (!exists(name)) {
+            errorHandler.reportError(0, 0, 
+                "Undefined symbol: " + name, 
+                ErrorHandler.ErrorType.SEMANTIC);
             return null;
         }
         return symbols.get(name).peek();
@@ -110,7 +123,7 @@ public class SymbolTable {
 
     private String validateValue(String type, Object value) {
         if (value == null) {
-            return "Cannot assign null value";
+            return null; // Allow null values for initialization
         }
 
         switch (type.toLowerCase()) {
@@ -158,13 +171,27 @@ public class SymbolTable {
         System.out.println("Name\t| Type\t| Scope\t| Global\t| Value");
         System.out.println("-".repeat(50));
 
-        symbols.forEach((name, stack) -> {
-            if (!stack.isEmpty()) {
-                Symbol symbol = stack.peek();
+        // Sort symbols by scope (globals first) and then by name
+        List<Map.Entry<String, Stack<Symbol>>> sortedSymbols = new ArrayList<>(symbols.entrySet());
+        sortedSymbols.sort((e1, e2) -> {
+            Symbol s1 = e1.getValue().peek();
+            Symbol s2 = e2.getValue().peek();
+            if (s1.isGlobal != s2.isGlobal) {
+                return s1.isGlobal ? -1 : 1;
+            }
+            if (s1.scope != s2.scope) {
+                return Integer.compare(s1.scope, s2.scope);
+            }
+            return e1.getKey().compareTo(e2.getKey());
+        });
+
+        for (Map.Entry<String, Stack<Symbol>> entry : sortedSymbols) {
+            if (!entry.getValue().isEmpty()) {
+                Symbol symbol = entry.getValue().peek();
                 System.out.printf("%s\t| %s\t| %d\t| %b\t| %s%n",
-                        name, symbol.type, symbol.scope,
+                        symbol.name, symbol.type, symbol.scope,
                         symbol.isGlobal, symbol.value);
             }
-        });
+        }
     }
 }
