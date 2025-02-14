@@ -41,7 +41,7 @@ public class ErrorHandler {
     public enum ErrorType {
         LEXICAL("Lexical Error"),
         SYNTAX("Syntax Error"),
-        SEMANTIC("Semantic Error");
+        SEMANTIC("Semantic Error"), INTERNAL("Internal Error");
 
         private final String description;
 

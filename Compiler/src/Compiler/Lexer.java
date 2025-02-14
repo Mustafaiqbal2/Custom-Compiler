@@ -15,20 +15,22 @@ public class Lexer {
     private Map<String, NFA> nfaPatterns;
     private Map<String, DFA> dfaPatterns;
 
-    // Keeping the original regex patterns as they are well tested
-    private static final Map<String, String> REGEX_PATTERNS = Map.of(
-        "WHITESPACE", "\\s+",
-        "KEYWORD", "global|function|var|integer|decimal|boolean|character",
-        "IDENTIFIER", "[a-z][a-z]*",
-        "INTEGER", "\\d+",
-        "DECIMAL", "\\d+\\.\\d{1,5}",
-        "BOOLEAN", "true|false",
-        "CHARACTER", "'[a-z]'",
-        "OPERATOR", "[+\\-*/%=^]",
-        "DELIMITER", "[(){}]",
-        "SINGLECOMMENT", "//[^\\n]*",
-        "MULTICOMMENT", "/\\*[^*]*\\*+(?:[^/*][^*]*\\*+)*/"
-    );
+ // Keeping the original regex patterns as they are well tested
+    private static final Map<String, String> REGEX_PATTERNS;
+    static {
+        REGEX_PATTERNS = new HashMap<>();
+        REGEX_PATTERNS.put("WHITESPACE", "\\s+");
+        REGEX_PATTERNS.put("KEYWORD", "global|function|var|integer|decimal|boolean|character");
+        REGEX_PATTERNS.put("IDENTIFIER", "[a-z][a-z]*");
+        REGEX_PATTERNS.put("INTEGER", "\\d+");
+        REGEX_PATTERNS.put("DECIMAL", "\\d+\\.\\d{1,5}");
+        REGEX_PATTERNS.put("BOOLEAN", "true|false");
+        REGEX_PATTERNS.put("CHARACTER", "'[a-z]'");
+        REGEX_PATTERNS.put("OPERATOR", "[+\\-*/%=^]");
+        REGEX_PATTERNS.put("DELIMITER", "[(){}]");
+        REGEX_PATTERNS.put("SINGLECOMMENT", "//[^\\n]*");
+        REGEX_PATTERNS.put("MULTICOMMENT", "/\\*[^*]*\\*+(?:[^/*][^*]*\\*+)*/");
+    }
 
     public Lexer(String input) {
         this.input = input;
@@ -202,6 +204,8 @@ public class Lexer {
                     symbolTable.setValue(lastIdentifier, token.value);
                 }
                 break;
+		default:
+			break;
         }
     }
 

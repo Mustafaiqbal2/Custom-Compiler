@@ -4,12 +4,21 @@ import java.util.*;
 
 public class State {
     private int id;
+    private String name;
     private boolean isAccepting;
     private Map<Character, Set<State>> transitions;
     private static int stateCounter = 0;
 
     public State() {
         this.id = stateCounter++;
+        this.name = "q" + id;
+        this.isAccepting = false;
+        this.transitions = new HashMap<>();
+    }
+
+    public State(String name) {
+        this.id = stateCounter++;
+        this.name = name;
         this.isAccepting = false;
         this.transitions = new HashMap<>();
     }
@@ -28,6 +37,10 @@ public class State {
 
     public int getId() {
         return id;
+    }
+
+    public String getName() {
+        return name;
     }
 
     public void setAccepting(boolean accepting) {

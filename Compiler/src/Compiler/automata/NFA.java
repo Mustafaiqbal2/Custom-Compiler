@@ -7,7 +7,49 @@ public class NFA {
     private Set<State> acceptingStates;
     private Set<State> allStates;
     private Set<Character> alphabet;
+    private static final char EPSILON = '\0';
 
+
+    public State getStartState() {
+        return startState;
+    }
+
+    public Set<State> getAcceptingStates() {
+        return Collections.unmodifiableSet(acceptingStates);
+    }
+
+
+    public void addTransition(State from, char symbol, State to) {
+        from.addTransition(symbol, to);
+        if (symbol != EPSILON) {
+            alphabet.add(symbol);
+        }
+        allStates.add(from);
+        allStates.add(to);
+    }
+
+    public void addEpsilonTransition(State from, State to) {
+        addTransition(from, EPSILON, to);
+    }
+
+    public void addAllTransitions(NFA other) {
+        // Copy all states
+        this.allStates.addAll(other.allStates);
+        
+        // Copy all transitions
+        for (State state : other.allStates) {
+            Map<Character, Set<State>> transitions = state.getAllTransitions();
+            for (Map.Entry<Character, Set<State>> entry : transitions.entrySet()) {
+                char symbol = entry.getKey();
+                if (symbol != EPSILON) {
+                    alphabet.add(symbol);
+                }
+                for (State target : entry.getValue()) {
+                    addTransition(state, symbol, target);
+                }
+            }
+        }
+    }
     public NFA() {
         this.acceptingStates = new HashSet<>();
         this.allStates = new HashSet<>();
@@ -23,13 +65,6 @@ public class NFA {
         state.setAccepting(true);
         acceptingStates.add(state);
         allStates.add(state);
-    }
-
-    public void addTransition(State from, char symbol, State to) {
-        from.addTransition(symbol, to);
-        alphabet.add(symbol);
-        allStates.add(from);
-        allStates.add(to);
     }
 
     public void displayTransitionTable() {
@@ -127,5 +162,5 @@ public class NFA {
             result.addAll(state.getTransitions(symbol));
         }
         return result;
-    }
+	}
 }
