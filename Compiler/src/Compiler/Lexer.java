@@ -10,18 +10,18 @@ public class Lexer {
     private int columnNumber;
 
     private static final Pattern TOKEN_PATTERNS = Pattern.compile(
-        "(?<WHITESPACE>\\s+)|" +
-        "(?<KEYWORD>global|function|var|integer|decimal|boolean|character)|" +
-        "(?<IDENTIFIER>[a-z][a-z]*)|" +
-        "(?<INTEGER>\\d+)|" +
-        "(?<DECIMAL>\\d+\\.\\d{1,5})|" +
-        "(?<BOOLEAN>true|false)|" +
-        "(?<CHARACTER>'[a-z]')|" +
-        "(?<OPERATOR>[+\\-*/%=^])|" +
-        "(?<DELIMITER>[(){}])|" +
-        "(?<SINGLE_COMMENT>//[^\\n]*)|" +
-        "(?<MULTI_COMMENT>/\\*[^*]*\\*+(?:[^/*][^*]*\\*+)*/>)"  // Fixed the regex here
-    );
+            "(?<WHITESPACE>\\s+)|" +
+            "(?<KEYWORD>global|function|var|integer|decimal|boolean|character)|" +
+            "(?<IDENTIFIER>[a-z][a-z]*)|" +
+            "(?<INTEGER>\\d+)|" +
+            "(?<DECIMAL>\\d+\\.\\d{1,5})|" +
+            "(?<BOOLEAN>true|false)|" +
+            "(?<CHARACTER>'[a-z]')|" +
+            "(?<OPERATOR>[+\\-*/%=^])|" +
+            "(?<DELIMITER>[(){}])|" +
+            "(?<SINGLECOMMENT>//[^\\n]*)|" +
+            "(?<MULTICOMMENT>/\\*[^*]*\\*+(?:[^/*][^*]*\\*+)*/)" // Removed the trailing '>' that was causing the error
+        );
 
     public Lexer(String input) {
         this.input = input;
