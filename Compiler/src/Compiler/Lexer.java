@@ -19,7 +19,6 @@ public class Lexer {
     private boolean isFunctionDeclaration = false;
     private String lastIdentifier = null;
     private boolean isDeclaration = false;
-    private String lastDeclaredIdentifier = null;
     private String currentDeclType = null;
     private boolean isNextGlobal = false;
 
@@ -220,13 +219,13 @@ public class Lexer {
         }, delim, lineNumber, columnNumber);
     }
 
-
     private void updateSymbolTable(Token token) {
         if (token == null) return;
 
         switch (token.type) {
             case GLOBAL -> {
                 isNextGlobal = true;
+                currentDeclType = null;
             }
             case FUNCTION -> {
                 isFunctionDeclaration = true;
@@ -238,15 +237,12 @@ public class Lexer {
             }
             case IDENTIFIER -> {
                 if (isFunctionDeclaration) {
-                    // Handle function declaration - always in global scope
                     symbolTable.add(token.value, "function", false, null);
                     lastIdentifier = token.value;
-                } else if (isDeclaration && currentDeclType != null) {
-                    // Handle variable declaration
+                } else if (currentDeclType != null) {
                     symbolTable.add(token.value, currentDeclType, isNextGlobal, null);
                     lastIdentifier = token.value;
                 } else {
-                    // This is a reference - lookups don't affect declaration state
                     lastIdentifier = token.value;
                     symbolTable.lookup(token.value);
                 }
@@ -255,31 +251,29 @@ public class Lexer {
                 if (lastIdentifier != null) {
                     symbolTable.setValue(lastIdentifier, token.value);
                     if (isDeclaration) {
-                        // Reset declaration-related states after value assignment
-                        lastIdentifier = null;
-                        if (!isFunctionDeclaration) {
-                            currentDeclType = null;
-                            isNextGlobal = false;
-                            isDeclaration = false;
-                        }
+                        isDeclaration = false;
+                        currentDeclType = null;
+                        isNextGlobal = false;
                     }
+                    lastIdentifier = null;
                 }
             }
             case LPAREN -> {
                 if (isFunctionDeclaration) {
-                    symbolTable.enterScope();  // Enter parameter scope
+                    symbolTable.enterScope();  // Enter function parameter scope
                 }
             }
             case RPAREN -> {
-                // Keep the parameter scope
+                // Keep function parameter scope
             }
             case LBRACE -> {
-                if (!isNextGlobal) {  // Don't enter scope for globals
-                    symbolTable.enterScope();  // Enter new block scope
-                }
                 if (isFunctionDeclaration) {
+                    // We're already in the function's scope from LPAREN
                     isFunctionDeclaration = false;
                     currentDeclType = null;
+                } else if (!isNextGlobal) {
+                    // Enter a new block scope
+                    symbolTable.enterScope();
                 }
             }
             case RBRACE -> {
@@ -288,42 +282,18 @@ public class Lexer {
                 currentDeclType = null;
                 lastIdentifier = null;
             }
-            case MULTIPLY, PLUS, MINUS, DIVIDE -> {
-                if (!isDeclaration) {
-                    lastIdentifier = null;  // Only reset if not in declaration
-                }
-            }
             case ASSIGN -> {
                 // Keep state for assignment
             }
             default -> {
-                if (!token.type.toString().contains("COMMENT")) {
-                    if (!isDeclaration && currentDeclType != null) {
-                        currentDeclType = null;
-                        isNextGlobal = false;
-                        lastIdentifier = null;
-                    }
+                if (!token.type.toString().contains("COMMENT") && 
+                    !isDeclaration && token.type != TokenType.ASSIGN) {
+                    lastIdentifier = null;
                 }
             }
         }
     }
-    private String getLastIdentifier() {
-        for (int i = tokens.size() - 1; i >= 0; i--) {
-            Token t = tokens.get(i);
-            if (t.type == TokenType.IDENTIFIER) {
-                return t.value;
-            }
-            // Stop looking if we hit another declaration
-            if (t.type == TokenType.INTEGER || 
-                t.type == TokenType.DECIMAL || 
-                t.type == TokenType.BOOLEAN || 
-                t.type == TokenType.CHARACTER) {
-                break;
-            }
-        }
-        return null;
-    }
-    
+        
  // Add method to get current scope
     public int getCurrentScope() {
         return symbolTable.getCurrentScope();
