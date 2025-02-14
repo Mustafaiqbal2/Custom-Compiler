@@ -23,25 +23,15 @@ public class Lexer {
     private String currentDeclType = null;
     private boolean isNextGlobal = false;
 
-    private static class TokenPattern {
-        final String type;
-        final Pattern pattern;
-        final boolean skip;
-
-        TokenPattern(String type, String regex, boolean skip) {
-            this.type = type;
-            this.pattern = Pattern.compile("^(" + regex + ")");
-            this.skip = skip;
-        }
-    }
+    
     // Define all static patterns first
     private static final Map<String, String> REGEX_PATTERNS;
-    private static final List<TokenPattern> TOKEN_PATTERNS;
 
     static {
         // Initialize REGEX_PATTERNS first
-        REGEX_PATTERNS = new HashMap<>();
-        REGEX_PATTERNS.put("WHITESPACE", "([ \t\r\n])");
+    	REGEX_PATTERNS = new HashMap<>();
+        // Keep the same patterns but without Java regex-specific syntax
+        REGEX_PATTERNS.put("WHITESPACE", "[ \t\r\n]");
         REGEX_PATTERNS.put("KEYWORD", "(global|function|var|integer|decimal|boolean|character)");
         REGEX_PATTERNS.put("IDENTIFIER", "[a-z][a-z0-9]*");
         REGEX_PATTERNS.put("INTEGER", "[0-9]+");
@@ -52,20 +42,6 @@ public class Lexer {
         REGEX_PATTERNS.put("DELIMITER", "[(){}]");
         REGEX_PATTERNS.put("SINGLECOMMENT", "//[^\n]*");
         REGEX_PATTERNS.put("MULTICOMMENT", "/[*]([^*]|[*]+[^*/])*[*]+/");
-
-        // Initialize TOKEN_PATTERNS after
-        TOKEN_PATTERNS = new ArrayList<>();
-        TOKEN_PATTERNS.add(new TokenPattern("WHITESPACE", "[ \t\r\n]+", true));
-        TOKEN_PATTERNS.add(new TokenPattern("MULTI_LINE_COMMENT", "/[*]([^*]|[*]+[^*/])*[*]+/", false));
-        TOKEN_PATTERNS.add(new TokenPattern("SINGLE_LINE_COMMENT", "//[^\n]*", false));
-        TOKEN_PATTERNS.add(new TokenPattern("KEYWORD", "\\b(global|function|var|integer|decimal|boolean|character)\\b", false));
-        TOKEN_PATTERNS.add(new TokenPattern("DECIMAL_LITERAL", "\\b\\d+\\.\\d+\\b", false));
-        TOKEN_PATTERNS.add(new TokenPattern("INTEGER_LITERAL", "\\b\\d+\\b", false));
-        TOKEN_PATTERNS.add(new TokenPattern("BOOLEAN_LITERAL", "\\b(true|false)\\b", false));
-        TOKEN_PATTERNS.add(new TokenPattern("CHARACTER_LITERAL", "'[a-z]'", false));
-        TOKEN_PATTERNS.add(new TokenPattern("IDENTIFIER", "\\b[a-z][a-z0-9]*\\b", false));
-        TOKEN_PATTERNS.add(new TokenPattern("OPERATOR", "[+\\-*/%^=]", false));
-        TOKEN_PATTERNS.add(new TokenPattern("DELIMITER", "[(){}]", false));
     }
 
     public Lexer(String input) {
@@ -182,19 +158,64 @@ public class Lexer {
         TokenMatch longestMatch = null;
         int maxLength = 0;
 
-        for (TokenPattern pattern : TOKEN_PATTERNS) {
-            Matcher matcher = pattern.pattern.matcher(input);
-            if (matcher.find()) {
-                String value = matcher.group(1);
-                if (value.length() > maxLength) {
-                    maxLength = value.length();
-                    longestMatch = new TokenMatch(pattern.type, value);
-                }
+        // Try each pattern and find the longest match
+        for (Map.Entry<String, DFA> entry : dfaPatterns.entrySet()) {
+            String patternType = entry.getKey();
+            DFA dfa = entry.getValue();
+            
+            // Find the longest prefix that the DFA accepts
+            int length = findLongestAcceptingPrefix(dfa, input);
+            
+            if (length > maxLength) {
+                maxLength = length;
+                String matchedValue = input.substring(0, length);
+                
+                // Map DFA pattern types to token pattern types
+                String tokenType = mapPatternTypeToTokenType(patternType);
+                longestMatch = new TokenMatch(tokenType, matchedValue);
             }
         }
 
         return longestMatch;
     }
+    
+    private String mapPatternTypeToTokenType(String patternType) {
+        return switch (patternType) {
+            case "WHITESPACE" -> "WHITESPACE";
+            case "KEYWORD" -> "KEYWORD";
+            case "IDENTIFIER" -> "IDENTIFIER";
+            case "INTEGER" -> "INTEGER_LITERAL";
+            case "DECIMAL" -> "DECIMAL_LITERAL";
+            case "BOOLEAN" -> "BOOLEAN_LITERAL";
+            case "CHARACTER" -> "CHARACTER_LITERAL";
+            case "OPERATOR" -> "OPERATOR";
+            case "DELIMITER" -> "DELIMITER";
+            case "SINGLECOMMENT" -> "SINGLE_LINE_COMMENT";
+            case "MULTICOMMENT" -> "MULTI_LINE_COMMENT";
+            default -> throw new IllegalStateException("Unknown pattern type: " + patternType);
+        };
+    }
+
+    private int findLongestAcceptingPrefix(DFA dfa, String input) {
+        int maxAcceptingPos = 0;
+        State currentState = dfa.getStartState();
+        
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+            currentState = dfa.transition(currentState, c);
+            
+            if (currentState == null) {
+                break; // No valid transition
+            }
+            
+            if (dfa.isAccepting(currentState)) {
+                maxAcceptingPos = i + 1;
+            }
+        }
+        
+        return maxAcceptingPos;
+    }
+
 
     private Token createOperatorToken(String op) {
         return new Token(switch (op) {

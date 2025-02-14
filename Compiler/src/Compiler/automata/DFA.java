@@ -107,4 +107,11 @@ public class DFA {
                Collections.unmodifiableMap(transitions.get(state)) : 
                Collections.emptyMap();
     }
+
+	public boolean isAccepting(State currentState) {
+		if (acceptingStates.contains(currentState)) {
+			return true;
+		}
+		return false;
+	}
 }
