@@ -94,19 +94,18 @@ public class NFA {
     }
 
     public DFA toDFA() {
-        // Subset construction algorithm
         DFA dfa = new DFA();
         Map<Set<State>, State> dfaStates = new HashMap<>();
         Queue<Set<State>> unprocessed = new LinkedList<>();
 
-        // Start with ε-closure of start state
+        // Get initial epsilon closure
         Set<State> initialSet = epsilonClosure(Set.of(startState));
         State dfaStart = new State();
         dfaStates.put(initialSet, dfaStart);
         unprocessed.add(initialSet);
         dfa.setStartState(dfaStart);
 
-        // If initial set contains any accepting state, make DFA start state accepting
+        // Handle accepting states in initial set
         if (initialSet.stream().anyMatch(State::isAccepting)) {
             dfa.addAcceptingState(dfaStart);
         }
@@ -115,22 +114,23 @@ public class NFA {
             Set<State> currentSet = unprocessed.poll();
             State currentDFAState = dfaStates.get(currentSet);
 
+            // For each input symbol
             for (char symbol : alphabet) {
-                // Create a final reference to the next set of states
-                final Set<State> nextStateSet = epsilonClosure(move(currentSet, symbol));
+                // Get next state set including epsilon closure
+                Set<State> nextStateSet = epsilonClosure(move(currentSet, symbol));
 
                 if (!nextStateSet.isEmpty()) {
-                    // Create or get the DFA state for this set
-                    State nextDFAState = dfaStates.get(nextStateSet);
-                    if (nextDFAState == null) {
-                        nextDFAState = new State();
+                    // Create or get existing DFA state
+                    State nextDFAState = dfaStates.computeIfAbsent(nextStateSet, k -> {
+                        State newState = new State();
                         if (nextStateSet.stream().anyMatch(State::isAccepting)) {
-                            dfa.addAcceptingState(nextDFAState);
+                            dfa.addAcceptingState(newState);
                         }
-                        dfaStates.put(nextStateSet, nextDFAState);
                         unprocessed.add(nextStateSet);
-                    }
+                        return newState;
+                    });
 
+                    // Add transition in DFA
                     dfa.addTransition(currentDFAState, symbol, nextDFAState);
                 }
             }
@@ -138,7 +138,6 @@ public class NFA {
 
         return dfa;
     }
-
     private Set<State> epsilonClosure(Set<State> states) {
         Set<State> closure = new HashSet<>(states);
         Stack<State> stack = new Stack<>();

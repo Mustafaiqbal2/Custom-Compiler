@@ -15,58 +15,41 @@ public class RegexToNFAConverter {
         // Then convert from infix to postfix notation
         return infixToPostfix(preprocessed);
     }
-
-    private NFA handleCharacterClass(String content) {
-        Set<Character> chars = new HashSet<>();
-        for (int i = 0; i < content.length(); i++) {
-            char c = content.charAt(i);
-            if (i + 2 < content.length() && content.charAt(i + 1) == '-') {
-                // Handle range like a-z
-                char end = content.charAt(i + 2);
-                for (char ch = c; ch <= end; ch++) {
-                    chars.add(ch);
-                }
-                i += 2;
-            } else {
-                chars.add(c);
-            }
-        }
-        return characterClass(chars);
-    }
-
     private String preprocess(String regex) {
         StringBuilder processed = new StringBuilder();
-        boolean escaped = false;
-        
+        boolean inCharClass = false;
+
         for (int i = 0; i < regex.length(); i++) {
-            char current = regex.charAt(i);
+            char c = regex.charAt(i);
             
-            // Handle escape sequences
-            if (current == '\\' && !escaped) {
-                escaped = true;
-                processed.append(current);
+            if (c == '[') {
+                inCharClass = true;
+                processed.append(c);
                 continue;
             }
             
-            if (!escaped) {
-                processed.append(current);
-                
-                if (i + 1 < regex.length()) {
-                    char next = regex.charAt(i + 1);
-                    // Add explicit concatenation operator '.' in specific cases
-                    if (shouldAddConcatenation(current, next)) {
-                        processed.append('.');
-                    }
+            if (c == ']') {
+                inCharClass = false;
+                processed.append(c);
+                continue;
+            }
+            
+            // Don't add concatenation operator inside character class
+            if (!inCharClass && i + 1 < regex.length()) {
+                processed.append(c);
+                char next = regex.charAt(i + 1);
+                if (shouldAddConcatenation(c, next)) {
+                    processed.append('.');
                 }
             } else {
-                // Handle escaped character
-                processed.append(current);
-                escaped = false;
+                processed.append(c);
             }
         }
         
+        System.out.println("Preprocessed regex: " + processed.toString());
         return processed.toString();
     }
+
 
     private String infixToPostfix(String infix) {
         StringBuilder postfix = new StringBuilder();
@@ -173,22 +156,32 @@ public class RegexToNFAConverter {
 
     private NFA thompsonConstruction(String regex) {
         Stack<NFA> nfaStack = new Stack<>();
-        boolean escaped = false;
+        boolean inCharClass = false;
+        StringBuilder classContent = new StringBuilder();
         
         for (int i = 0; i < regex.length(); i++) {
             char c = regex.charAt(i);
             
-            if (c == '\\' && !escaped) {
-                escaped = true;
+            if (c == '[' && !inCharClass) {
+                inCharClass = true;
                 continue;
             }
             
-            if (escaped) {
-                nfaStack.push(handleEscape(c));
-                escaped = false;
+            if (c == ']' && inCharClass) {
+                inCharClass = false;
+                String content = classContent.toString();
+                System.out.println("Processing character class: [" + content + "]");
+                nfaStack.push(handleCharacterClass(content));
+                classContent = new StringBuilder();
                 continue;
             }
             
+            if (inCharClass) {
+                classContent.append(c);
+                continue;
+            }
+            
+            // Rest of the switch case for handling other regex operators
             switch (c) {
                 case '|':
                     if (nfaStack.size() < 2) throw new IllegalStateException("Invalid regex: insufficient operands for |");
@@ -214,17 +207,6 @@ public class RegexToNFAConverter {
                     NFA first = nfaStack.pop();
                     nfaStack.push(concatenate(first, second));
                     break;
-                case '[':
-                    StringBuilder classContent = new StringBuilder();
-                    i++;
-                    while (i < regex.length() && regex.charAt(i) != ']') {
-                        classContent.append(regex.charAt(i++));
-                    }
-                    if (i >= regex.length()) {
-                        throw new IllegalStateException("Unclosed character class");
-                    }
-                    nfaStack.push(handleCharacterClass(classContent.toString()));
-                    break;
                 default:
                     nfaStack.push(createBasicNFA(c));
             }
@@ -233,7 +215,6 @@ public class RegexToNFAConverter {
         if (nfaStack.size() != 1) throw new IllegalStateException("Invalid regex: improper expression");
         return nfaStack.pop();
     }
-
     private NFA createBasicNFA(char c) {
         NFA nfa = new NFA();
         State start = new State("q" + stateCounter++);
@@ -368,14 +349,64 @@ public class RegexToNFAConverter {
             result.setStartState(start);
             result.addAcceptingState(end);
             
-            // Add transitions for each character in the class
+            // Create a single state for the character class
             for (char c : chars) {
+                // Add direct transitions without epsilon moves
                 result.addTransition(start, c, end);
             }
             
             return result;
         }
 
+        private NFA handleCharacterClass(String content) {
+            Set<Character> chars = new HashSet<>();
+            
+            // Debug output
+            System.out.println("Processing character class content: " + content);
+            
+            for (int i = 0; i < content.length(); i++) {
+                char c = content.charAt(i);
+                if (i + 2 < content.length() && content.charAt(i + 1) == '-') {
+                    // Handle range like a-z
+                    char start = c;
+                    char end = content.charAt(i + 2);
+                    System.out.printf("Processing range: %c-%c%n", start, end);
+                    
+                    // Validate range
+                    if (end < start) {
+                        throw new IllegalArgumentException("Invalid range: " + start + "-" + end);
+                    }
+                    
+                    // Add all characters in the range inclusive
+                    for (char ch = start; ch <= end; ch++) {
+                        chars.add(ch);
+                        System.out.println("Adding character from range: " + ch);
+                    }
+                    i += 2; // Skip the hyphen and end character
+                } else if (c != '-') { // Skip lone hyphens
+                    System.out.println("Adding single character: " + c);
+                    chars.add(c);
+                }
+            }
+            
+            // Debug output
+            System.out.println("Final character set: " + chars);
+            
+            NFA result = new NFA();
+            State start = new State("q" + stateCounter++);
+            State end = new State("q" + stateCounter++);
+            
+            result.setStartState(start);
+            result.addAcceptingState(end);
+            
+            // Add transitions for each character
+            for (char c : chars) {
+                result.addTransition(start, c, end);
+                System.out.printf("Added transition for character: %c%n", c);
+            }
+            
+            return result;
+        }
         private NFA rangeNFA(char start, char end) {
             Set<Character> chars = new HashSet<>();
             for (char c = start; c <= end; c++) {
