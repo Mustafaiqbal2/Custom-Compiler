@@ -1,7 +1,9 @@
 package Compiler;
 
 import java.util.*;
-import java.util.regex.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 import Compiler.automata.*;
 
 public class Lexer {
@@ -15,23 +17,35 @@ public class Lexer {
     private Map<String, NFA> nfaPatterns;
     private Map<String, DFA> dfaPatterns;
 
- // Keeping the original regex patterns as they are well tested
+    private static class TokenPattern {
+        final String type;
+        final Pattern pattern;
+        final boolean skip;
+
+        TokenPattern(String type, String regex, boolean skip) {
+            this.type = type;
+            this.pattern = Pattern.compile("^(" + regex + ")");
+            this.skip = skip;
+        }
+    }
+    // Simplified patterns that are guaranteed to work with the NFA converter
+ // Define token patterns with proper precedence
+    // Regex patterns for NFA/DFA conversion
     private static final Map<String, String> REGEX_PATTERNS;
     static {
         REGEX_PATTERNS = new HashMap<>();
-        REGEX_PATTERNS.put("WHITESPACE", "\\s+");
-        REGEX_PATTERNS.put("KEYWORD", "global|function|var|integer|decimal|boolean|character");
-        REGEX_PATTERNS.put("IDENTIFIER", "[a-z][a-z]*");
-        REGEX_PATTERNS.put("INTEGER", "\\d+");
-        REGEX_PATTERNS.put("DECIMAL", "\\d+\\.\\d{1,5}");
-        REGEX_PATTERNS.put("BOOLEAN", "true|false");
+        // Simple patterns that work with Thompson Construction
+        REGEX_PATTERNS.put("WHITESPACE", "(\\s)");
+        REGEX_PATTERNS.put("KEYWORD", "(global)|(function)|(var)|(integer)|(decimal)|(boolean)|(character)");
+        REGEX_PATTERNS.put("IDENTIFIER", "[a-z]([a-z])*");
+        REGEX_PATTERNS.put("INTEGER", "[0-9]([0-9])*");
+        REGEX_PATTERNS.put("DECIMAL", "[0-9]([0-9])*\\.[0-9]([0-9])*");
+        REGEX_PATTERNS.put("BOOLEAN", "(true)|(false)");
         REGEX_PATTERNS.put("CHARACTER", "'[a-z]'");
-        REGEX_PATTERNS.put("OPERATOR", "[+\\-*/%=^]");
-        REGEX_PATTERNS.put("DELIMITER", "[(){}]");
-        REGEX_PATTERNS.put("SINGLECOMMENT", "//[^\\n]*");
-        REGEX_PATTERNS.put("MULTICOMMENT", "/\\*[^*]*\\*+(?:[^/*][^*]*\\*+)*/");
+        REGEX_PATTERNS.put("OPERATOR", "(\\+)|(\\-)|(\\*)|(/)|(%)|(\\^)|(=)");
+        REGEX_PATTERNS.put("DELIMITER", "(\\()|(\\))|(\\{)|(\\})");
     }
-
+    
     public Lexer(String input) {
         this.input = input;
         this.tokens = new ArrayList<>();
@@ -43,6 +57,21 @@ public class Lexer {
         this.nfaPatterns = new HashMap<>();
         this.dfaPatterns = new HashMap<>();
         convertRegexToDFA();
+    }
+    // Token patterns for direct regex matching
+    private static final List<TokenPattern> TOKEN_PATTERNS = new ArrayList<>();
+    static {
+        TOKEN_PATTERNS.add(new TokenPattern("WHITESPACE", "[ \t\r\n]+", true));
+        TOKEN_PATTERNS.add(new TokenPattern("MULTI_LINE_COMMENT", "/\\*[\\s\\S]*?\\*/", false));
+        TOKEN_PATTERNS.add(new TokenPattern("SINGLE_LINE_COMMENT", "//[^\n]*", false));
+        TOKEN_PATTERNS.add(new TokenPattern("KEYWORD", "\\b(global|function|var|integer|decimal|boolean|character)\\b", false));
+        TOKEN_PATTERNS.add(new TokenPattern("DECIMAL_LITERAL", "\\b\\d+\\.\\d+\\b", false));
+        TOKEN_PATTERNS.add(new TokenPattern("INTEGER_LITERAL", "\\b\\d+\\b", false));
+        TOKEN_PATTERNS.add(new TokenPattern("BOOLEAN_LITERAL", "\\b(true|false)\\b", false));
+        TOKEN_PATTERNS.add(new TokenPattern("CHARACTER_LITERAL", "'[a-z]'", false));
+        TOKEN_PATTERNS.add(new TokenPattern("IDENTIFIER", "\\b[a-z][a-z0-9]*\\b", false));
+        TOKEN_PATTERNS.add(new TokenPattern("OPERATOR", "[+\\-*/%^=]", false));
+        TOKEN_PATTERNS.add(new TokenPattern("DELIMITER", "[(){}]", false));
     }
 
     private void convertRegexToDFA() {
@@ -66,21 +95,29 @@ public class Lexer {
 
     public void tokenize() {
         while (currentPosition < input.length()) {
-            boolean matched = false;
             String remaining = input.substring(currentPosition);
+            boolean matched = false;
 
-            // Try each DFA for matching
-            TokenMatch bestMatch = findLongestMatch(remaining);
-
-            if (bestMatch != null) {
-                processToken(bestMatch);
-                matched = true;
+            for (TokenPattern pattern : TOKEN_PATTERNS) {
+                Matcher matcher = pattern.pattern.matcher(remaining);
+                if (matcher.find()) {
+                    String value = matcher.group(1);
+                    if (!pattern.skip) {
+                        Token token = createToken(pattern.type, value);
+                        if (token != null) {
+                            tokens.add(token);
+                            updateSymbolTable(token);
+                        }
+                    }
+                    updatePosition(value);
+                    matched = true;
+                    break;
+                }
             }
 
             if (!matched) {
-                // Report error for unrecognized token
-                errorHandler.reportError(lineNumber, columnNumber, 
-                    "Invalid token at position " + currentPosition,
+                errorHandler.reportError(lineNumber, columnNumber,
+                    "Invalid token: " + remaining.charAt(0),
                     ErrorHandler.ErrorType.LEXICAL);
                 currentPosition++;
                 columnNumber++;
@@ -89,33 +126,18 @@ public class Lexer {
 
         tokens.add(new Token(TokenType.EOF, "", lineNumber, columnNumber));
     }
-
-    private TokenMatch findLongestMatch(String input) {
-        TokenMatch longestMatch = null;
-        int maxLength = 0;
-
-        for (Map.Entry<String, DFA> entry : dfaPatterns.entrySet()) {
-            String prefix = findLongestAcceptedPrefix(input, entry.getValue());
-            if (prefix != null && prefix.length() > maxLength) {
-                maxLength = prefix.length();
-                longestMatch = new TokenMatch(entry.getKey(), prefix);
+    
+    private void updatePosition(String value) {
+        for (char c : value.toCharArray()) {
+            if (c == '\n') {
+                lineNumber++;
+                columnNumber = 1;
+            } else {
+                columnNumber++;
             }
         }
-
-        return longestMatch;
+        currentPosition += value.length();
     }
-
-    private String findLongestAcceptedPrefix(String input, DFA dfa) {
-        String longestAccepted = null;
-        for (int i = 1; i <= input.length(); i++) {
-            String prefix = input.substring(0, i);
-            if (dfa.accepts(prefix)) {
-                longestAccepted = prefix;
-            }
-        }
-        return longestAccepted;
-    }
-
     private void processToken(TokenMatch match) {
         String type = match.type();
         String value = match.value();
@@ -149,20 +171,21 @@ public class Lexer {
         return switch (type) {
             case "KEYWORD" -> new Token(TokenType.valueOf(value.toUpperCase()), value, lineNumber, columnNumber);
             case "IDENTIFIER" -> new Token(TokenType.IDENTIFIER, value, lineNumber, columnNumber);
-            case "INTEGER" -> new Token(TokenType.INTEGER_LITERAL, value, lineNumber, columnNumber);
-            case "DECIMAL" -> new Token(TokenType.DECIMAL_LITERAL, value, lineNumber, columnNumber);
-            case "BOOLEAN" -> new Token(TokenType.BOOLEAN_LITERAL, value, lineNumber, columnNumber);
-            case "CHARACTER" -> new Token(TokenType.CHARACTER_LITERAL, value, lineNumber, columnNumber);
+            case "INTEGER_LITERAL" -> new Token(TokenType.INTEGER_LITERAL, value, lineNumber, columnNumber);
+            case "DECIMAL_LITERAL" -> new Token(TokenType.DECIMAL_LITERAL, value, lineNumber, columnNumber);
+            case "BOOLEAN_LITERAL" -> new Token(TokenType.BOOLEAN_LITERAL, value, lineNumber, columnNumber);
+            case "CHARACTER_LITERAL" -> new Token(TokenType.CHARACTER_LITERAL, value, lineNumber, columnNumber);
             case "OPERATOR" -> createOperatorToken(value);
             case "DELIMITER" -> createDelimiterToken(value);
-            case "SINGLECOMMENT" -> new Token(TokenType.SINGLE_LINE_COMMENT, value, lineNumber, columnNumber);
-            case "MULTICOMMENT" -> new Token(TokenType.MULTI_LINE_COMMENT, value, lineNumber, columnNumber);
-            default -> new Token(TokenType.UNKNOWN, value, lineNumber, columnNumber);
+            case "SINGLE_LINE_COMMENT" -> new Token(TokenType.SINGLE_LINE_COMMENT, value, lineNumber, columnNumber);
+            case "MULTI_LINE_COMMENT" -> new Token(TokenType.MULTI_LINE_COMMENT, value, lineNumber, columnNumber);
+            default -> null;
         };
     }
 
+
     private Token createOperatorToken(String op) {
-        TokenType type = switch(op) {
+        return new Token(switch (op) {
             case "+" -> TokenType.PLUS;
             case "-" -> TokenType.MINUS;
             case "*" -> TokenType.MULTIPLY;
@@ -171,20 +194,20 @@ public class Lexer {
             case "^" -> TokenType.EXPONENT;
             case "=" -> TokenType.ASSIGN;
             default -> TokenType.UNKNOWN;
-        };
-        return new Token(type, op, lineNumber, columnNumber);
+        }, op, lineNumber, columnNumber);
     }
 
+
     private Token createDelimiterToken(String delim) {
-        TokenType type = switch(delim) {
+        return new Token(switch (delim) {
             case "(" -> TokenType.LPAREN;
             case ")" -> TokenType.RPAREN;
             case "{" -> TokenType.LBRACE;
             case "}" -> TokenType.RBRACE;
             default -> TokenType.UNKNOWN;
-        };
-        return new Token(type, delim, lineNumber, columnNumber);
+        }, delim, lineNumber, columnNumber);
     }
+
 
     private void updateSymbolTable(Token token) {
         switch (token.type) {
