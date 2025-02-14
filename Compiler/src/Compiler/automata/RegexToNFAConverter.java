@@ -1,17 +1,21 @@
 package Compiler.automata;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class RegexToNFAConverter {
     private int stateCounter = 0;
 
     public NFA convert(String regex) {
-        return thompsonConstruction(parseRegex(regex));
+        System.out.println("Converting regex: " + regex);
+        String postfix = parseRegex(regex);
+        System.out.println("Postfix notation: " + postfix);
+        return thompsonConstruction(postfix);
     }
-
     private String parseRegex(String regex) {
         // First preprocess to add explicit concatenation operators
         String preprocessed = preprocess(regex);
+        System.out.println("After preprocessing: " + preprocessed);
         // Then convert from infix to postfix notation
         return infixToPostfix(preprocessed);
     }
@@ -34,116 +38,92 @@ public class RegexToNFAConverter {
                 continue;
             }
             
-            // Don't add concatenation operator inside character class
-            if (!inCharClass && i + 1 < regex.length()) {
-                processed.append(c);
+            processed.append(c);
+            
+            // Only add concatenation if not in character class and not at last character
+            if (!inCharClass && i < regex.length() - 1) {
                 char next = regex.charAt(i + 1);
+                // Add concatenation operator if needed
                 if (shouldAddConcatenation(c, next)) {
                     processed.append('.');
                 }
-            } else {
-                processed.append(c);
             }
         }
         
-        System.out.println("Preprocessed regex: " + processed.toString());
         return processed.toString();
     }
-
 
     private String infixToPostfix(String infix) {
         StringBuilder postfix = new StringBuilder();
         Stack<Character> operators = new Stack<>();
         Map<Character, Integer> precedence = new HashMap<>();
+        boolean inCharClass = false;
         
         // Set operator precedence
-        precedence.put('|', 1);  // Union
-        precedence.put('.', 2);  // Concatenation
-        precedence.put('*', 3);  // Kleene star
-        precedence.put('+', 3);  // One or more
-        precedence.put('?', 3);  // Zero or one
-        
-        boolean escaped = false;
+        precedence.put('|', 1);  // Union has lowest precedence
+        precedence.put('.', 2);  // Concatenation has higher precedence than union
+        precedence.put('*', 3);  // Unary operators have highest precedence
+        precedence.put('+', 3);
+        precedence.put('?', 3);
         
         for (int i = 0; i < infix.length(); i++) {
             char c = infix.charAt(i);
             
-            if (c == '\\' && !escaped) {
-                escaped = true;
+            if (c == '[') {
+                inCharClass = true;
                 postfix.append(c);
-                continue;
-            }
-            
-            if (escaped) {
+            } else if (c == ']') {
+                inCharClass = false;
                 postfix.append(c);
-                escaped = false;
-                continue;
-            }
-            
-            if (isOperator(c)) {
+            } else if (inCharClass) {
+                postfix.append(c);
+            } else if (isOperator(c)) {
                 while (!operators.isEmpty() && operators.peek() != '(' &&
-                       precedence.getOrDefault(operators.peek(), 0) >= precedence.get(c)) {
+                       precedence.get(operators.peek()) >= precedence.get(c)) {
                     postfix.append(operators.pop());
                 }
                 operators.push(c);
-            }
-            else if (c == '(') {
+            } else if (c == '(') {
                 operators.push(c);
-            }
-            else if (c == ')') {
+            } else if (c == ')') {
                 while (!operators.isEmpty() && operators.peek() != '(') {
                     postfix.append(operators.pop());
                 }
-                if (!operators.isEmpty() && operators.peek() == '(') {
-                    operators.pop();
-                } else {
-                    throw new IllegalStateException("Mismatched parentheses");
+                if (!operators.isEmpty()) {
+                    operators.pop(); // Remove '('
                 }
-            }
-            else if (c == '[') {
-                // Handle character class
-                StringBuilder classContent = new StringBuilder();
-                i++;
-                while (i < infix.length() && infix.charAt(i) != ']') {
-                    classContent.append(infix.charAt(i++));
-                }
-                if (i >= infix.length()) {
-                    throw new IllegalStateException("Unclosed character class");
-                }
-                // Add character class as a special token
-                postfix.append("[").append(classContent).append("]");
-            }
-            else {
+            } else {
                 postfix.append(c);
             }
         }
         
-        // Pop remaining operators
         while (!operators.isEmpty()) {
             char op = operators.pop();
-            if (op == '(') {
-                throw new IllegalStateException("Mismatched parentheses");
+            if (op != '(') {
+                postfix.append(op);
             }
-            postfix.append(op);
         }
         
         return postfix.toString();
     }
 
     private boolean shouldAddConcatenation(char current, char next) {
-        // Add concatenation operator between:
-        // 1. letter/digit and letter/digit
-        // 2. letter/digit and (
-        // 3. ) and letter/digit
-        // 4. * and letter/digit
-        // 5. + and letter/digit
-        // 6. ? and letter/digit
-        // 7. ] and letter/digit or (
-        return (isLiteralChar(current) && (isLiteralChar(next) || next == '(' || next == '[')) ||
-               (current == ')' && (isLiteralChar(next) || next == '(' || next == '[')) ||
-               ((current == '*' || current == '+' || current == '?') && 
-                (isLiteralChar(next) || next == '(' || next == '[')) ||
-               (current == ']' && (isLiteralChar(next) || next == '(' || next == '['));
+        // Don't add concatenation for character class boundaries
+        if (current == '[' || next == ']') {
+            return false;
+        }
+        
+        // Add concatenation between:
+        // 1. Two literals
+        // 2. Literal and opening parenthesis
+        // 3. Closing parenthesis and literal
+        // 4. Closing character class and literal/opening parenthesis
+        // 5. Unary operator and literal/opening parenthesis
+        boolean currentCanPrefix = isLiteralChar(current) || current == ')' || current == ']' 
+                                 || current == '*' || current == '+' || current == '?';
+        boolean nextCanSuffix = isLiteralChar(next) || next == '(' || next == '[';
+        
+        return currentCanPrefix && nextCanSuffix;
     }
 
     private boolean isLiteralChar(char c) {
@@ -158,63 +138,85 @@ public class RegexToNFAConverter {
         Stack<NFA> nfaStack = new Stack<>();
         boolean inCharClass = false;
         StringBuilder classContent = new StringBuilder();
-        
+
         for (int i = 0; i < regex.length(); i++) {
             char c = regex.charAt(i);
+            
+            System.out.println("Processing character: " + c); // Debug output
             
             if (c == '[' && !inCharClass) {
                 inCharClass = true;
                 continue;
             }
             
-            if (c == ']' && inCharClass) {
-                inCharClass = false;
-                String content = classContent.toString();
-                System.out.println("Processing character class: [" + content + "]");
-                nfaStack.push(handleCharacterClass(content));
-                classContent = new StringBuilder();
-                continue;
-            }
-            
             if (inCharClass) {
-                classContent.append(c);
+                if (c == ']') {
+                    inCharClass = false;
+                    String content = classContent.toString();
+                    System.out.println("Processing character class: [" + content + "]");
+                    nfaStack.push(handleCharacterClass(content));
+                    classContent = new StringBuilder();
+                } else {
+                    classContent.append(c);
+                }
                 continue;
             }
-            
-            // Rest of the switch case for handling other regex operators
-            switch (c) {
-                case '|':
-                    if (nfaStack.size() < 2) throw new IllegalStateException("Invalid regex: insufficient operands for |");
-                    NFA nfa2 = nfaStack.pop();
-                    NFA nfa1 = nfaStack.pop();
-                    nfaStack.push(union(nfa1, nfa2));
-                    break;
-                case '*':
-                    if (nfaStack.isEmpty()) throw new IllegalStateException("Invalid regex: insufficient operands for *");
-                    nfaStack.push(kleeneStar(nfaStack.pop()));
-                    break;
-                case '+':
-                    if (nfaStack.isEmpty()) throw new IllegalStateException("Invalid regex: insufficient operands for +");
-                    nfaStack.push(kleenePlus(nfaStack.pop()));
-                    break;
-                case '?':
-                    if (nfaStack.isEmpty()) throw new IllegalStateException("Invalid regex: insufficient operands for ?");
-                    nfaStack.push(optional(nfaStack.pop()));
-                    break;
-                case '.':
-                    if (nfaStack.size() < 2) throw new IllegalStateException("Invalid regex: insufficient operands for concatenation");
-                    NFA second = nfaStack.pop();
-                    NFA first = nfaStack.pop();
-                    nfaStack.push(concatenate(first, second));
-                    break;
-                default:
-                    nfaStack.push(createBasicNFA(c));
+
+            try {
+                switch (c) {
+                    case '|':
+                        if (nfaStack.size() < 2) 
+                            throw new IllegalStateException("Invalid regex: insufficient operands for |");
+                        NFA nfa2 = nfaStack.pop();
+                        NFA nfa1 = nfaStack.pop();
+                        nfaStack.push(union(nfa1, nfa2));
+                        break;
+                        
+                    case '.': // Explicit concatenation operator
+                        if (nfaStack.size() < 2) 
+                            throw new IllegalStateException("Invalid regex: insufficient operands for concatenation");
+                        NFA second = nfaStack.pop();
+                        NFA first = nfaStack.pop();
+                        nfaStack.push(concatenate(first, second));
+                        break;
+                        
+                    case '*':
+                        if (nfaStack.isEmpty()) 
+                            throw new IllegalStateException("Invalid regex: insufficient operands for *");
+                        nfaStack.push(kleeneStar(nfaStack.pop()));
+                        break;
+                        
+                    case '+':
+                        if (nfaStack.isEmpty()) 
+                            throw new IllegalStateException("Invalid regex: insufficient operands for +");
+                        nfaStack.push(kleenePlus(nfaStack.pop()));
+                        break;
+                        
+                    case '?':
+                        if (nfaStack.isEmpty()) 
+                            throw new IllegalStateException("Invalid regex: insufficient operands for ?");
+                        nfaStack.push(optional(nfaStack.pop()));
+                        break;
+                        
+                    default:
+                        if (c != '(' && c != ')') { // Ignore parentheses in postfix
+                            nfaStack.push(createBasicNFA(c));
+                        }
+                }
+            } catch (Exception e) {
+                System.err.println("Error processing character '" + c + "' at position " + i);
+                throw e;
             }
         }
         
-        if (nfaStack.size() != 1) throw new IllegalStateException("Invalid regex: improper expression");
+        if (nfaStack.size() != 1) {
+            System.err.println("Final stack size: " + nfaStack.size()); // Debug output
+            throw new IllegalStateException("Invalid regex: improper expression");
+        }
+        
         return nfaStack.pop();
     }
+    
     private NFA createBasicNFA(char c) {
         NFA nfa = new NFA();
         State start = new State("q" + stateCounter++);
@@ -256,14 +258,21 @@ public class RegexToNFAConverter {
 
     private NFA concatenate(NFA nfa1, NFA nfa2) {
         NFA result = new NFA();
+        
+        // Set start state
         result.setStartState(nfa1.getStartState());
         
-        // Add ε-transitions from nfa1's accepting states to nfa2's start state
+        // Clear accepting status of nfa1's accepting states
+        for (State s : nfa1.getAcceptingStates()) {
+            s.setAccepting(false);
+        }
+        
+        // Add epsilon transitions from nfa1's accepting states to nfa2's start state
         for (State s : nfa1.getAcceptingStates()) {
             result.addEpsilonTransition(s, nfa2.getStartState());
         }
         
-        // Set nfa2's accepting states as the new accepting states
+        // Set accepting states from nfa2
         for (State s : nfa2.getAcceptingStates()) {
             result.addAcceptingState(s);
         }
@@ -271,6 +280,22 @@ public class RegexToNFAConverter {
         // Copy all transitions
         result.addAllTransitions(nfa1);
         result.addAllTransitions(nfa2);
+        
+        // Debug output without using stream operations
+        System.out.println("Created concatenation NFA:");
+        System.out.println("Start state: " + result.getStartState().getId());
+        
+        // Build accepting states string manually
+        StringBuilder acceptingStates = new StringBuilder();
+        boolean first = true;
+        for (State s : result.getAcceptingStates()) {
+            if (!first) {
+                acceptingStates.append(", ");
+            }
+            acceptingStates.append(s.getId());
+            first = false;
+        }
+        System.out.println("Accepting states: " + acceptingStates.toString());
         
         return result;
     }

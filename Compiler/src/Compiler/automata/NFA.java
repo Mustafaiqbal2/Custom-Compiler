@@ -1,6 +1,7 @@
 package Compiler.automata;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class NFA {
     private State startState;
@@ -97,16 +98,17 @@ public class NFA {
         DFA dfa = new DFA();
         Map<Set<State>, State> dfaStates = new HashMap<>();
         Queue<Set<State>> unprocessed = new LinkedList<>();
+        AtomicInteger stateCounter = new AtomicInteger(1); // Using AtomicInteger instead
 
         // Get initial epsilon closure
         Set<State> initialSet = epsilonClosure(Set.of(startState));
-        State dfaStart = new State();
+        State dfaStart = new State("d0");
         dfaStates.put(initialSet, dfaStart);
         unprocessed.add(initialSet);
         dfa.setStartState(dfaStart);
 
-        // Handle accepting states in initial set
-        if (initialSet.stream().anyMatch(State::isAccepting)) {
+        // Only mark as accepting if all required states are reached
+        if (initialSet.containsAll(acceptingStates)) {
             dfa.addAcceptingState(dfaStart);
         }
 
@@ -120,10 +122,10 @@ public class NFA {
                 Set<State> nextStateSet = epsilonClosure(move(currentSet, symbol));
 
                 if (!nextStateSet.isEmpty()) {
-                    // Create or get existing DFA state
+                    // Create or get existing DFA state using AtomicInteger
                     State nextDFAState = dfaStates.computeIfAbsent(nextStateSet, k -> {
-                        State newState = new State();
-                        if (nextStateSet.stream().anyMatch(State::isAccepting)) {
+                        State newState = new State("d" + stateCounter.getAndIncrement());
+                        if (isAcceptingStateSet(nextStateSet)) {
                             dfa.addAcceptingState(newState);
                         }
                         unprocessed.add(nextStateSet);
@@ -137,6 +139,17 @@ public class NFA {
         }
 
         return dfa;
+    }
+    
+    private boolean isAcceptingStateSet(Set<State> states) {
+        // For concatenation, we need to make sure we've reached an accepting state
+        // through the proper sequence of transitions
+        for (State state : acceptingStates) {
+            if (!states.contains(state)) {
+                return false;
+            }
+        }
+        return true;
     }
     private Set<State> epsilonClosure(Set<State> states) {
         Set<State> closure = new HashSet<>(states);
