@@ -4,6 +4,7 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import Compiler.SymbolTable.Symbol;
 import Compiler.automata.*;
 
 public class Lexer {
@@ -225,42 +226,49 @@ public class Lexer {
         switch (token.type) {
             case GLOBAL -> {
                 isNextGlobal = true;
-                currentDeclType = null;
+                isDeclaration = true;  // Also set declaration flag for global
             }
             case FUNCTION -> {
                 isFunctionDeclaration = true;
                 currentDeclType = "function";
+                isDeclaration = true;
             }
             case INTEGER, DECIMAL, BOOLEAN, CHARACTER -> {
                 currentDeclType = token.value.toLowerCase();
                 isDeclaration = true;
             }
             case IDENTIFIER -> {
-                if (isFunctionDeclaration) {
-                    symbolTable.add(token.value, "function", false, null);
-                    lastIdentifier = token.value;
-                } else if (currentDeclType != null) {
-                    symbolTable.add(token.value, currentDeclType, isNextGlobal, null);
-                    lastIdentifier = token.value;
+                lastIdentifier = token.value;
+                
+                if (isDeclaration && currentDeclType != null) {
+                    // This is a declaration (either function or variable)
+                    boolean isGlobal = isNextGlobal || currentDeclType.equals("function");
+                    symbolTable.add(token.value, currentDeclType, isGlobal, null);
                 } else {
-                    lastIdentifier = token.value;
-                    symbolTable.lookup(token.value);
+                    // This is a reference
+                    Symbol symbol = symbolTable.lookup(token.value);
+                    if (symbol == null) {
+                        errorHandler.reportError(token.lineNumber, token.column,
+                            "Undefined symbol: " + token.value,
+                            ErrorHandler.ErrorType.SEMANTIC);
+                    }
                 }
             }
             case INTEGER_LITERAL, DECIMAL_LITERAL, BOOLEAN_LITERAL, CHARACTER_LITERAL -> {
                 if (lastIdentifier != null) {
                     symbolTable.setValue(lastIdentifier, token.value);
-                    if (isDeclaration) {
+                    lastIdentifier = null;
+                    if (!isFunctionDeclaration) {
+                        // Reset declaration flags after value assignment for variables
                         isDeclaration = false;
                         currentDeclType = null;
                         isNextGlobal = false;
                     }
-                    lastIdentifier = null;
                 }
             }
             case LPAREN -> {
                 if (isFunctionDeclaration) {
-                    symbolTable.enterScope();  // Enter function parameter scope
+                    symbolTable.enterFunctionScope();
                 }
             }
             case RPAREN -> {
@@ -268,27 +276,32 @@ public class Lexer {
             }
             case LBRACE -> {
                 if (isFunctionDeclaration) {
-                    // We're already in the function's scope from LPAREN
+                    // We're already in function scope from LPAREN
                     isFunctionDeclaration = false;
                     currentDeclType = null;
                 } else if (!isNextGlobal) {
-                    // Enter a new block scope
                     symbolTable.enterScope();
                 }
             }
             case RBRACE -> {
                 symbolTable.exitScope();
+                isFunctionDeclaration = false;
                 isDeclaration = false;
                 currentDeclType = null;
+                isNextGlobal = false;
                 lastIdentifier = null;
             }
+            case MULTIPLY, PLUS, MINUS, DIVIDE -> {
+                // Don't reset lastIdentifier for expressions
+            }
             case ASSIGN -> {
-                // Keep state for assignment
+                // Don't reset states during assignment
             }
             default -> {
-                if (!token.type.toString().contains("COMMENT") && 
-                    !isDeclaration && token.type != TokenType.ASSIGN) {
-                    lastIdentifier = null;
+                if (!token.type.toString().contains("COMMENT")) {
+                    if (!isDeclaration && !token.type.toString().contains("LITERAL")) {
+                        lastIdentifier = null;
+                    }
                 }
             }
         }

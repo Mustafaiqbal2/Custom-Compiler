@@ -1,10 +1,9 @@
 package Compiler;
 
 import java.util.*;
-import Compiler.util.PatternMatcher;
 
 public class SymbolTable {
-	private static class Symbol {
+    public static class Symbol {
         String name;
         String type;
         boolean isGlobal;
@@ -18,164 +17,143 @@ public class SymbolTable {
             this.scope = scope;
             this.value = value;
         }
-    }    
 
-    private final Map<String, Stack<Symbol>> symbols;
-    private int currentScope;
-    private final Map<Integer, Map<String, Symbol>> scopedSymbols;
-    private final ErrorHandler errorHandler;
-    private Stack<Integer> scopeStack;
-    
-    public SymbolTable(ErrorHandler errorHandler) {
-    	this.symbols = new HashMap<>();
-        this.scopedSymbols = new HashMap<>();
-        this.scopeStack = new Stack<>();
-        this.currentScope = 0;
-        this.scopeStack.push(currentScope);
-        this.errorHandler = errorHandler;
-        this.scopedSymbols.put(0, new HashMap<>()); // Initialize global scope
+        @Override
+        public String toString() {
+            return String.format("%s\t| %s\t| %d\t| %b\t| %s",
+                name, type, scope, isGlobal, value);
+        }
     }
 
+    private final Map<Integer, Map<String, Symbol>> symbolsByScope;
+    private final Stack<Integer> scopeStack;
+    private int currentScope;
+    private final ErrorHandler errorHandler;
+
+    public SymbolTable(ErrorHandler errorHandler) {
+        this.symbolsByScope = new HashMap<>();
+        this.scopeStack = new Stack<>();
+        this.currentScope = 0;
+        this.errorHandler = errorHandler;
+        
+        // Initialize global scope
+        this.symbolsByScope.put(0, new HashMap<>());
+        this.scopeStack.push(0);
+    }
+
+    public void enterFunctionScope() {
+        enterScope(); // Treat function scope like any other scope
+    }
 
     public void enterScope() {
         currentScope++;
         scopeStack.push(currentScope);
-        scopedSymbols.put(currentScope, new HashMap<>()); // Initialize new scope
+        symbolsByScope.put(currentScope, new HashMap<>());
     }
 
     public void exitScope() {
-        if (!scopeStack.isEmpty()) {
-            int scopeToRemove = scopeStack.pop();
-            scopedSymbols.remove(scopeToRemove); // Remove entire scope
-            currentScope = scopeStack.isEmpty() ? 0 : scopeStack.peek();
+        if (!scopeStack.isEmpty() && scopeStack.size() > 1) { // Keep global scope
+            scopeStack.pop();
+            currentScope = scopeStack.peek();
         }
-    }
-
-    private boolean existsInCurrentScope(String name) {
-        Map<String, Symbol> currentScopeSymbols = scopedSymbols.get(currentScope);
-        return currentScopeSymbols != null && currentScopeSymbols.containsKey(name);
     }
 
     public void add(String name, String type, boolean isGlobal, Object value) {
-        // Validate identifier
-        if (!PatternMatcher.isValidIdentifier(name)) {
-            errorHandler.reportError(0, 0, 
-                "Invalid identifier name: " + name, 
-                ErrorHandler.ErrorType.SEMANTIC);
-            return;
-        }
-
+        // Determine the target scope
         int targetScope = isGlobal ? 0 : currentScope;
-        Map<String, Symbol> scopeSymbols = scopedSymbols.get(targetScope);
 
-        // Special handling for functions
-        if (type.equals("function")) {
-            if (currentScope != 0) {
-                errorHandler.reportError(0, 0,
-                    "Functions can only be defined in global scope",
-                    ErrorHandler.ErrorType.SEMANTIC);
-                return;
-            }
-            if (scopeSymbols.containsKey(name)) {
-                errorHandler.reportError(0, 0,
-                    "Function '" + name + "' already defined",
-                    ErrorHandler.ErrorType.SEMANTIC);
-                return;
-            }
-            Symbol symbol = new Symbol(name, type, false, 0, value);
-            scopeSymbols.put(name, symbol);
-            return;
-        }
-
-        // Check if identifier already exists in current scope
-        if (existsInCurrentScope(name)) {
-            errorHandler.reportError(0, 0, 
-                "Symbol '" + name + "' already defined in current scope", 
+        // Check for duplicate declarations in current scope
+        Map<String, Symbol> scopeSymbols = symbolsByScope.get(targetScope);
+        if (scopeSymbols != null && scopeSymbols.containsKey(name)) {
+            String currentType = scopeSymbols.get(name).type;
+            errorHandler.reportError(0, 0,
+                String.format("Symbol '%s' already defined as %s in current scope", 
+                    name, currentType),
                 ErrorHandler.ErrorType.SEMANTIC);
             return;
         }
 
-        // Validate value if provided
-        if (value != null) {
-            String validationError = validateValue(type, value);
-            if (validationError != null) {
-                errorHandler.reportError(0, 0, validationError, ErrorHandler.ErrorType.SEMANTIC);
-                return;
-            }
-        }
-
-        // Add the symbol to the appropriate scope
+        // Create and add the new symbol
         Symbol symbol = new Symbol(name, type, isGlobal, targetScope, value);
-        scopeSymbols.put(name, symbol);
+        symbolsByScope.computeIfAbsent(targetScope, k -> new HashMap<>())
+                     .put(name, symbol);
     }
-    
+
     public Symbol lookup(String name) {
-        // First check current scope
-        Map<String, Symbol> currentScopeSymbols = scopedSymbols.get(currentScope);
-        if (currentScopeSymbols != null && currentScopeSymbols.containsKey(name)) {
-            return currentScopeSymbols.get(name);
+        // Check current scope first
+        Symbol symbol = lookupInScope(currentScope, name);
+        if (symbol != null) return symbol;
+
+        // Then check enclosing scopes up to global
+        for (int i = scopeStack.size() - 2; i >= 0; i--) {
+            symbol = lookupInScope(scopeStack.get(i), name);
+            if (symbol != null) return symbol;
         }
 
-        // Then check global scope if we're not already in it
-        if (currentScope != 0) {
-            Map<String, Symbol> globalScope = scopedSymbols.get(0);
-            if (globalScope != null && globalScope.containsKey(name)) {
-                return globalScope.get(name);
-            }
-        }
-
-        errorHandler.reportError(0, 0, 
-            "Undefined symbol: " + name, 
-            ErrorHandler.ErrorType.SEMANTIC);
         return null;
     }
-    
-    public boolean exists(String name) {
-        Stack<Symbol> stack = symbols.get(name);
-        if (stack == null || stack.isEmpty()) {
-            return false;
-        }
-        
-        // Check if the symbol is visible in current scope
-        Symbol symbol = stack.peek();
-        return symbol.isGlobal || symbol.scope <= currentScope;
+
+    private Symbol lookupInScope(int scope, String name) {
+        Map<String, Symbol> scopeSymbols = symbolsByScope.get(scope);
+        return scopeSymbols != null ? scopeSymbols.get(name) : null;
     }
-    
+
     public void setValue(String name, Object value) {
-        Stack<Symbol> stack = symbols.get(name);
-        if (stack == null || stack.isEmpty()) {
-            errorHandler.reportError(0, 0, 
-                "Undefined symbol: " + name, 
-                ErrorHandler.ErrorType.SEMANTIC);
-            return;
-        }
-
-        // Find the most recent visible symbol
-        Symbol symbol = null;
-        for (int i = stack.size() - 1; i >= 0; i--) {
-            Symbol temp = stack.get(i);
-            if (temp.isGlobal || temp.scope <= currentScope) {
-                symbol = temp;
-                break;
-            }
-        }
-
+        Symbol symbol = lookup(name);
         if (symbol == null) {
-            errorHandler.reportError(0, 0, 
-                "Symbol not accessible in current scope: " + name, 
+            errorHandler.reportError(0, 0,
+                "Undefined symbol: " + name,
                 ErrorHandler.ErrorType.SEMANTIC);
             return;
         }
 
         String validationError = validateValue(symbol.type, value);
         if (validationError != null) {
-            errorHandler.reportError(0, 0, 
-                validationError, 
-                ErrorHandler.ErrorType.SEMANTIC);
+            errorHandler.reportError(0, 0, validationError, ErrorHandler.ErrorType.SEMANTIC);
             return;
         }
 
         symbol.value = value;
+    }
+
+    private String validateValue(String type, Object value) {
+        if (value == null) return null;
+
+        try {
+            switch (type.toLowerCase()) {
+                case "integer":
+                    if (value instanceof String) {
+                        Integer.parseInt((String) value);
+                    }
+                    break;
+                case "decimal":
+                    if (value instanceof String) {
+                        Double.parseDouble((String) value);
+                    }
+                    break;
+                case "boolean":
+                    if (value instanceof String &&
+                        !("true".equals(value) || "false".equals(value))) {
+                        return "Invalid boolean value: " + value;
+                    }
+                    break;
+                case "character":
+                    if (value instanceof String) {
+                        String str = (String) value;
+                        if (str.length() != 3 || str.charAt(0) != '\'' || str.charAt(2) != '\'') {
+                            return "Invalid character literal: " + value;
+                        }
+                    }
+                    break;
+                case "function":
+                    return null; // Functions don't have values
+                default:
+                    return "Unknown type: " + type;
+            }
+        } catch (NumberFormatException e) {
+            return "Invalid " + type + " value: " + value;
+        }
+        return null;
     }
 
     public void displayTable() {
@@ -183,25 +161,14 @@ public class SymbolTable {
         System.out.println("Name\t| Type\t| Scope\t| Global\t| Value");
         System.out.println("-".repeat(50));
 
-        // First collect all visible symbols at current scope
-        Map<String, Symbol> visibleSymbols = new HashMap<>();
-        
-        for (Map.Entry<String, Stack<Symbol>> entry : symbols.entrySet()) {
-            Stack<Symbol> stack = entry.getValue();
-            
-            // Find the most recent visible symbol for this name
-            for (int i = stack.size() - 1; i >= 0; i--) {
-                Symbol symbol = stack.get(i);
-                if (symbol.isGlobal || symbol.scope <= currentScope) {
-                    visibleSymbols.put(entry.getKey(), symbol);
-                    break;
-                }
-            }
+        // Collect all symbols
+        List<Symbol> allSymbols = new ArrayList<>();
+        for (Map<String, Symbol> scopeSymbols : symbolsByScope.values()) {
+            allSymbols.addAll(scopeSymbols.values());
         }
 
-        // Sort and display symbols
-        List<Symbol> sortedSymbols = new ArrayList<>(visibleSymbols.values());
-        sortedSymbols.sort((s1, s2) -> {
+        // Sort: globals first, then by scope, then by name
+        allSymbols.sort((s1, s2) -> {
             if (s1.isGlobal != s2.isGlobal) {
                 return s1.isGlobal ? -1 : 1;
             }
@@ -211,56 +178,8 @@ public class SymbolTable {
             return s1.name.compareTo(s2.name);
         });
 
-        for (Symbol symbol : sortedSymbols) {
-            System.out.printf("%s\t| %s\t| %d\t| %b\t| %s%n",
-                symbol.name, symbol.type, symbol.scope,
-                symbol.isGlobal, symbol.value);
-        }
-    }
-
-    private String validateValue(String type, Object value) {
-        if (value == null) {
-            return null; // Allow null values for initialization
-        }
-
-        switch (type.toLowerCase()) {
-            case "integer":
-                if (!(value instanceof Integer) && !(value instanceof String)) {
-                    return "Expected integer value, got: " + value.getClass().getSimpleName();
-                }
-                if (value instanceof String && !PatternMatcher.isValidInteger((String)value)) {
-                    return "Invalid integer value: " + value;
-                }
-                break;
-            case "decimal":
-                if (!(value instanceof Double) && !(value instanceof String)) {
-                    return "Expected decimal value, got: " + value.getClass().getSimpleName();
-                }
-                if (value instanceof String && !PatternMatcher.isValidDecimal((String)value)) {
-                    return "Invalid decimal value: " + value;
-                }
-                break;
-            case "character":
-                if (!(value instanceof Character) && !(value instanceof String)) {
-                    return "Expected character value, got: " + value.getClass().getSimpleName();
-                }
-                if (value instanceof String && !PatternMatcher.isValidCharacter((String)value)) {
-                    return "Invalid character value: " + value;
-                }
-                break;
-            case "boolean":
-                if (!(value instanceof Boolean) && !(value instanceof String)) {
-                    return "Expected boolean value, got: " + value.getClass().getSimpleName();
-                }
-                if (value instanceof String && 
-                    !value.equals("true") && !value.equals("false")) {
-                    return "Invalid boolean value: " + value;
-                }
-                break;
-            default:
-                return "Unknown type: " + type;
-        }
-        return null; // null means no error
+        // Display symbols
+        allSymbols.forEach(symbol -> System.out.println(symbol));
     }
 
     public int getCurrentScope() {
