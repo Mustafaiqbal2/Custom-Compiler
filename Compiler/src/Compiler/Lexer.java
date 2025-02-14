@@ -29,21 +29,56 @@ public class Lexer {
 
     static {
         REGEX_PATTERNS = new HashMap<>();
-        // Simplified patterns that our DFA can handle
-        REGEX_PATTERNS.put("WHITESPACE", " |\t|\r|\n");  // Simple alternation for whitespace
-        REGEX_PATTERNS.put("KEYWORD", "global|function|var|integer|decimal|boolean|character");  // Keywords as alternations
-        REGEX_PATTERNS.put("IDENTIFIER", "a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|q|r|s|t|u|v|w|x|y|z(a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|q|r|s|t|u|v|w|x|y|z|0|1|2|3|4|5|6|7|8|9)*");  // Simplified identifier pattern
-        REGEX_PATTERNS.put("INTEGER", "0|1|2|3|4|5|6|7|8|9(0|1|2|3|4|5|6|7|8|9)*");  // Numbers
-        REGEX_PATTERNS.put("DECIMAL", "(0|1|2|3|4|5|6|7|8|9)(0|1|2|3|4|5|6|7|8|9)*.(0|1|2|3|4|5|6|7|8|9)(0|1|2|3|4|5|6|7|8|9)*");  // Decimal numbers
-        REGEX_PATTERNS.put("BOOLEAN", "true|false");  // Boolean literals
-        REGEX_PATTERNS.put("CHARACTER", "'(a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|q|r|s|t|u|v|w|x|y|z)'");  // Character literals
-        REGEX_PATTERNS.put("OPERATOR", "+|-|*|/|%|=|^");  // Simple operators
-        REGEX_PATTERNS.put("DELIMITER", "(|)|{|}");  // Delimiters
-        REGEX_PATTERNS.put("SINGLECOMMENT", "//(a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|q|r|s|t|u|v|w|x|y|z|0|1|2|3|4|5|6|7|8|9| |\t)*");  // Single line comments
-        // Removed multiline comment for now as it's more complex
+        
+        // Keywords - match exact strings
+        REGEX_PATTERNS.put("GLOBAL_KEYWORD", "global");
+        REGEX_PATTERNS.put("FUNCTION_KEYWORD", "function");
+        REGEX_PATTERNS.put("VAR_KEYWORD", "var");
+        REGEX_PATTERNS.put("INTEGER_KEYWORD", "integer");
+        REGEX_PATTERNS.put("DECIMAL_KEYWORD", "decimal");
+        REGEX_PATTERNS.put("BOOLEAN_KEYWORD", "boolean");
+        REGEX_PATTERNS.put("CHARACTER_KEYWORD", "character");
+        
+        // Simple patterns
+        REGEX_PATTERNS.put("WHITESPACE", " ");
+        REGEX_PATTERNS.put("TAB", "\t");
+        REGEX_PATTERNS.put("NEWLINE", "\n");
+        
+        // Operators as individual patterns
+        REGEX_PATTERNS.put("PLUS_OP", "\\+");
+        REGEX_PATTERNS.put("MINUS_OP", "\\-");
+        REGEX_PATTERNS.put("MULTIPLY_OP", "\\*");
+        REGEX_PATTERNS.put("DIVIDE_OP", "\\/");
+        REGEX_PATTERNS.put("MODULUS_OP", "\\%");
+        REGEX_PATTERNS.put("ASSIGN_OP", "\\=");
+        REGEX_PATTERNS.put("EXPONENT_OP", "\\^");
+        
+        // Delimiters as individual patterns
+        REGEX_PATTERNS.put("LPAREN_DELIM", "\\(");
+        REGEX_PATTERNS.put("RPAREN_DELIM", "\\)");
+        REGEX_PATTERNS.put("LBRACE_DELIM", "\\{");
+        REGEX_PATTERNS.put("RBRACE_DELIM", "\\}");
+        
+        // Build identifier pattern - single letters first, we'll handle longer ones in the lexer
+        StringBuilder letters = new StringBuilder();
+        for (char c = 'a'; c <= 'z'; c++) {
+            if (letters.length() > 0) letters.append("|");
+            letters.append(c);
+        }
+        REGEX_PATTERNS.put("IDENTIFIER", letters.toString());
+        
+        // Numbers - single digits first, we'll handle sequences in the lexer
+        StringBuilder digits = new StringBuilder();
+        for (char c = '0'; c <= '9'; c++) {
+            if (digits.length() > 0) digits.append("|");
+            digits.append(c);
+        }
+        REGEX_PATTERNS.put("DIGIT", digits.toString());
+        
+        // Boolean literals
+        REGEX_PATTERNS.put("TRUE_LITERAL", "true");
+        REGEX_PATTERNS.put("FALSE_LITERAL", "false");
     }
-
-
 
     public Lexer(String input) {
         this.input = input;
@@ -124,19 +159,15 @@ public class Lexer {
     
 
     private Token createToken(String type, String value) {
-        return switch (type) {
-            case "KEYWORD" -> new Token(TokenType.valueOf(value.toUpperCase()), value, lineNumber, columnNumber);
-            case "IDENTIFIER" -> new Token(TokenType.IDENTIFIER, value, lineNumber, columnNumber);
-            case "INTEGER_LITERAL" -> new Token(TokenType.INTEGER_LITERAL, value, lineNumber, columnNumber);
-            case "DECIMAL_LITERAL" -> new Token(TokenType.DECIMAL_LITERAL, value, lineNumber, columnNumber);
-            case "BOOLEAN_LITERAL" -> new Token(TokenType.BOOLEAN_LITERAL, value, lineNumber, columnNumber);
-            case "CHARACTER_LITERAL" -> new Token(TokenType.CHARACTER_LITERAL, value, lineNumber, columnNumber);
-            case "OPERATOR" -> createOperatorToken(value);
-            case "DELIMITER" -> createDelimiterToken(value);
-            case "SINGLE_LINE_COMMENT" -> new Token(TokenType.SINGLE_LINE_COMMENT, value, lineNumber, columnNumber);
-            case "MULTI_LINE_COMMENT" -> new Token(TokenType.MULTI_LINE_COMMENT, value, lineNumber, columnNumber);
-            default -> null;
-        };
+        try {
+            TokenType tokenType = TokenType.valueOf(type);
+            return new Token(tokenType, value, lineNumber, columnNumber);
+        } catch (IllegalArgumentException e) {
+            errorHandler.reportError(lineNumber, columnNumber,
+                "Invalid token type: " + type,
+                ErrorHandler.ErrorType.INTERNAL);
+            return null;
+        }
     }
     private TokenMatch findLongestMatch(String input) {
         TokenMatch longestMatch = null;
@@ -167,17 +198,28 @@ public class Lexer {
 
     private String mapPatternTypeToTokenType(String patternType) {
         return switch (patternType) {
-            case "WHITESPACE" -> "WHITESPACE";
-            case "KEYWORD" -> "KEYWORD";
+            case "WHITESPACE", "TAB", "NEWLINE" -> "WHITESPACE";
+            case "GLOBAL_KEYWORD" -> "GLOBAL";
+            case "FUNCTION_KEYWORD" -> "FUNCTION";
+            case "VAR_KEYWORD" -> "VAR";
+            case "INTEGER_KEYWORD" -> "INTEGER";
+            case "DECIMAL_KEYWORD" -> "DECIMAL";
+            case "BOOLEAN_KEYWORD" -> "BOOLEAN";
+            case "CHARACTER_KEYWORD" -> "CHARACTER";
             case "IDENTIFIER" -> "IDENTIFIER";
-            case "INTEGER" -> "INTEGER_LITERAL";
-            case "DECIMAL" -> "DECIMAL_LITERAL";
-            case "BOOLEAN" -> "BOOLEAN_LITERAL";
-            case "CHARACTER" -> "CHARACTER_LITERAL";
-            case "OPERATOR" -> "OPERATOR";
-            case "DELIMITER" -> "DELIMITER";
-            case "SINGLECOMMENT" -> "SINGLE_LINE_COMMENT";
-            case "MULTICOMMENT" -> "MULTI_LINE_COMMENT";
+            case "DIGIT" -> "INTEGER_LITERAL";
+            case "TRUE_LITERAL", "FALSE_LITERAL" -> "BOOLEAN_LITERAL";
+            case "PLUS_OP" -> "PLUS";
+            case "MINUS_OP" -> "MINUS";
+            case "MULTIPLY_OP" -> "MULTIPLY";
+            case "DIVIDE_OP" -> "DIVIDE";
+            case "MODULUS_OP" -> "MODULUS";
+            case "ASSIGN_OP" -> "ASSIGN";
+            case "EXPONENT_OP" -> "EXPONENT";
+            case "LPAREN_DELIM" -> "LPAREN";
+            case "RPAREN_DELIM" -> "RPAREN";
+            case "LBRACE_DELIM" -> "LBRACE";
+            case "RBRACE_DELIM" -> "RBRACE";
             default -> throw new IllegalStateException("Unknown pattern type: " + patternType);
         };
     }
@@ -217,7 +259,6 @@ public class Lexer {
         }, op, lineNumber, columnNumber);
     }
 
-
     private Token createDelimiterToken(String delim) {
         return new Token(switch (delim) {
             case "(" -> TokenType.LPAREN;
@@ -227,7 +268,6 @@ public class Lexer {
             default -> TokenType.UNKNOWN;
         }, delim, lineNumber, columnNumber);
     }
-
     private void updateSymbolTable(Token token) {
         if (token == null) return;
 
@@ -319,6 +359,45 @@ public class Lexer {
             }
         }
     }
+ // Add this helper method to build identifiers
+    private String buildIdentifier(String input, int startPos) {
+        StringBuilder identifier = new StringBuilder();
+        int pos = startPos;
+        
+        while (pos < input.length()) {
+            char c = input.charAt(pos);
+            if (Character.isLetterOrDigit(c)) {
+                identifier.append(c);
+                pos++;
+            } else {
+                break;
+            }
+        }
+        
+        return identifier.toString();
+    }
+ // Add this helper method to build numbers from digits
+    private String buildNumber(String input, int startPos) {
+        StringBuilder number = new StringBuilder();
+        int pos = startPos;
+        boolean hasDecimal = false;
+        
+        while (pos < input.length()) {
+            char c = input.charAt(pos);
+            if (Character.isDigit(c)) {
+                number.append(c);
+                pos++;
+            } else if (c == '.' && !hasDecimal) {
+                number.append(c);
+                hasDecimal = true;
+                pos++;
+            } else {
+                break;
+            }
+        }
+        
+        return number.toString();
+    }
  // Add method to get current scope
     public int getCurrentScope() {
         return symbolTable.getCurrentScope();
@@ -336,6 +415,7 @@ public class Lexer {
     public ErrorHandler getErrorHandler() {
         return errorHandler;
     }
+    
 }
 
 // Record to store token match information
