@@ -227,31 +227,26 @@ public class Lexer {
         switch (token.type) {
             case GLOBAL -> {
                 isNextGlobal = true;
-                isDeclaration = false; // Reset declaration state
             }
             case FUNCTION -> {
                 isFunctionDeclaration = true;
                 currentDeclType = "function";
-                isDeclaration = false; // Reset declaration state
             }
             case INTEGER, DECIMAL, BOOLEAN, CHARACTER -> {
                 currentDeclType = token.value.toLowerCase();
-                isDeclaration = true; // This is a declaration
+                isDeclaration = true;
             }
             case IDENTIFIER -> {
                 if (isFunctionDeclaration) {
-                    // Handle function declaration
+                    // Handle function declaration - always in global scope
                     symbolTable.add(token.value, "function", false, null);
                     lastIdentifier = token.value;
-                    lastDeclaredIdentifier = token.value;
                 } else if (isDeclaration && currentDeclType != null) {
                     // Handle variable declaration
                     symbolTable.add(token.value, currentDeclType, isNextGlobal, null);
                     lastIdentifier = token.value;
-                    lastDeclaredIdentifier = token.value;
-                    // Don't reset isDeclaration here as we might have a value coming
                 } else {
-                    // This is a reference
+                    // This is a reference - lookups don't affect declaration state
                     lastIdentifier = token.value;
                     symbolTable.lookup(token.value);
                 }
@@ -259,14 +254,13 @@ public class Lexer {
             case INTEGER_LITERAL, DECIMAL_LITERAL, BOOLEAN_LITERAL, CHARACTER_LITERAL -> {
                 if (lastIdentifier != null) {
                     symbolTable.setValue(lastIdentifier, token.value);
-                    if (lastIdentifier.equals(lastDeclaredIdentifier)) {
-                        // Only reset states if we've finished setting a declared variable
+                    if (isDeclaration) {
+                        // Reset declaration-related states after value assignment
                         lastIdentifier = null;
-                        lastDeclaredIdentifier = null;
-                        isDeclaration = false;
                         if (!isFunctionDeclaration) {
                             currentDeclType = null;
                             isNextGlobal = false;
+                            isDeclaration = false;
                         }
                     }
                 }
@@ -277,17 +271,15 @@ public class Lexer {
                 }
             }
             case RPAREN -> {
-                // Keep function parameter scope open
+                // Keep the parameter scope
             }
             case LBRACE -> {
-                if (!isNextGlobal) {  // Don't enter new scope for global declarations
-                    if (isFunctionDeclaration) {
-                        // We're already in function parameter scope, no need for new scope
-                        isFunctionDeclaration = false;
-                        currentDeclType = null;
-                    } else {
-                        symbolTable.enterScope();
-                    }
+                if (!isNextGlobal) {  // Don't enter scope for globals
+                    symbolTable.enterScope();  // Enter new block scope
+                }
+                if (isFunctionDeclaration) {
+                    isFunctionDeclaration = false;
+                    currentDeclType = null;
                 }
             }
             case RBRACE -> {
@@ -295,28 +287,21 @@ public class Lexer {
                 isDeclaration = false;
                 currentDeclType = null;
                 lastIdentifier = null;
-                lastDeclaredIdentifier = null;
             }
             case MULTIPLY, PLUS, MINUS, DIVIDE -> {
-                // In an expression context
                 if (!isDeclaration) {
                     lastIdentifier = null;  // Only reset if not in declaration
                 }
             }
             case ASSIGN -> {
-                // Keep states for assignment
+                // Keep state for assignment
             }
             default -> {
                 if (!token.type.toString().contains("COMMENT")) {
-                    if (currentDeclType != null && 
-                        token.type != TokenType.ASSIGN && 
-                        !isDeclaration) {
-                        // Reset states only if we're not in a declaration
+                    if (!isDeclaration && currentDeclType != null) {
                         currentDeclType = null;
                         isNextGlobal = false;
                         lastIdentifier = null;
-                        lastDeclaredIdentifier = null;
-                        isDeclaration = false;
                     }
                 }
             }

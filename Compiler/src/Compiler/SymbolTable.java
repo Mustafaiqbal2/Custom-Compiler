@@ -4,38 +4,50 @@ import java.util.*;
 import Compiler.util.PatternMatcher;
 
 public class SymbolTable {
-    private static class Symbol {
+	private static class Symbol {
         String name;
         String type;
         boolean isGlobal;
         Object value;
         int scope;
+        int parentScope;  // Add parentScope to track hierarchy
 
-        Symbol(String name, String type, boolean isGlobal, int scope, Object value) {
+        Symbol(String name, String type, boolean isGlobal, int scope, int parentScope, Object value) {
             this.name = name;
             this.type = type;
             this.isGlobal = isGlobal;
             this.scope = scope;
+            this.parentScope = parentScope;
             this.value = value;
         }
     }
+    
 
     private final Map<String, Stack<Symbol>> symbols;
     private int currentScope;
+    private int parentScope; 
+    private Stack<Integer> parentScopeStack; 
+
     private final ErrorHandler errorHandler;
     private Stack<Integer> scopeStack;
     
     public SymbolTable(ErrorHandler errorHandler) {
         this.symbols = new HashMap<>();
         this.scopeStack = new Stack<>();
+        this.parentScopeStack = new Stack<>();
         this.currentScope = 0;
+        this.parentScope = 0;
         this.scopeStack.push(currentScope);
+        this.parentScopeStack.push(parentScope);
         this.errorHandler = errorHandler;
     }
 
 
 
+
     public void enterScope() {
+        parentScope = currentScope;  // Current becomes parent
+        parentScopeStack.push(parentScope);
         currentScope++;
         scopeStack.push(currentScope);
     }
@@ -44,7 +56,7 @@ public class SymbolTable {
         if (!scopeStack.isEmpty()) {
             int scopeToRemove = scopeStack.pop();
             
-            // Remove all symbols in the scope we're exiting
+            // Remove all symbols in the current scope
             Iterator<Map.Entry<String, Stack<Symbol>>> it = symbols.entrySet().iterator();
             while (it.hasNext()) {
                 Map.Entry<String, Stack<Symbol>> entry = it.next();
@@ -60,7 +72,22 @@ public class SymbolTable {
             }
             
             currentScope = scopeStack.isEmpty() ? 0 : scopeStack.peek();
+            if (!parentScopeStack.isEmpty()) {
+                parentScopeStack.pop();
+                parentScope = parentScopeStack.isEmpty() ? 0 : parentScopeStack.peek();
+            }
         }
+    }
+
+    private boolean existsInCurrentScope(String name) {
+        Stack<Symbol> stack = symbols.get(name);
+        if (stack == null || stack.isEmpty()) {
+            return false;
+        }
+        
+        // Check only in the exact current scope
+        return stack.stream()
+            .anyMatch(s -> s.scope == currentScope);
     }
 
     public void add(String name, String type, boolean isGlobal, Object value) {
@@ -80,12 +107,12 @@ public class SymbolTable {
                     ErrorHandler.ErrorType.SEMANTIC);
                 return;
             }
-            Symbol symbol = new Symbol(name, type, false, 0, value);
+            Symbol symbol = new Symbol(name, type, false, 0, 0, value);
             symbols.computeIfAbsent(name, k -> new Stack<>()).push(symbol);
             return;
         }
 
-        // Check if identifier already exists in current scope
+        // Check if identifier already exists in current scope only
         if (existsInCurrentScope(name)) {
             errorHandler.reportError(0, 0, 
                 "Symbol '" + name + "' already defined in current scope", 
@@ -93,25 +120,72 @@ public class SymbolTable {
             return;
         }
 
-        // For global variables, always use scope 0
+        // Validate value if provided
+        if (value != null) {
+            String validationError = validateValue(type, value);
+            if (validationError != null) {
+                errorHandler.reportError(0, 0, validationError, ErrorHandler.ErrorType.SEMANTIC);
+                return;
+            }
+        }
+
+        // Use proper scope settings
         int scope = isGlobal ? 0 : currentScope;
-        
-        // Add the symbol
-        Symbol symbol = new Symbol(name, type, isGlobal, scope, value);
-        Stack<Symbol> stack = symbols.computeIfAbsent(name, k -> new Stack<>());
-        stack.push(symbol);
+        int parent = isGlobal ? 0 : parentScope;
+        Symbol symbol = new Symbol(name, type, isGlobal, scope, parent, value);
+        symbols.computeIfAbsent(name, k -> new Stack<>()).push(symbol);
     }
     
-    private boolean existsInCurrentScope(String name) {
+    public Symbol lookup(String name) {
         Stack<Symbol> stack = symbols.get(name);
         if (stack == null || stack.isEmpty()) {
-            return false;
+            errorHandler.reportError(0, 0, 
+                "Undefined symbol: " + name, 
+                ErrorHandler.ErrorType.SEMANTIC);
+            return null;
         }
-        
-        // Check if there's already a symbol with this name in the current scope
-        return stack.stream()
-            .anyMatch(s -> s.scope == currentScope);
+
+        // First try current scope
+        for (int i = stack.size() - 1; i >= 0; i--) {
+            Symbol symbol = stack.get(i);
+            if (symbol.scope == currentScope) {
+                return symbol;
+            }
+        }
+
+        // Then check parent scopes in hierarchy
+        for (int i = stack.size() - 1; i >= 0; i--) {
+            Symbol symbol = stack.get(i);
+            // Check if symbol is global or in a valid parent scope
+            if (symbol.isGlobal || isParentScope(symbol.scope)) {
+                return symbol;
+            }
+        }
+
+        errorHandler.reportError(0, 0, 
+            "Symbol '" + name + "' not accessible in current scope", 
+            ErrorHandler.ErrorType.SEMANTIC);
+        return null;
     }
+
+    private boolean isParentScope(int scope) {
+        // Check if the given scope is a parent of current scope
+        int checkScope = parentScope;
+        while (checkScope > 0) {
+            if (checkScope == scope) {
+                return true;
+            }
+            // Find parent of parent by looking in stack
+            int parentIndex = parentScopeStack.indexOf(checkScope);
+            if (parentIndex > 0) {
+                checkScope = parentScopeStack.get(parentIndex - 1);
+            } else {
+                break;
+            }
+        }
+        return false;
+    }
+    
     public boolean exists(String name) {
         Stack<Symbol> stack = symbols.get(name);
         if (stack == null || stack.isEmpty()) {
@@ -122,38 +196,6 @@ public class SymbolTable {
         Symbol symbol = stack.peek();
         return symbol.isGlobal || symbol.scope <= currentScope;
     }
-
-    public Symbol lookup(String name) {
-        Stack<Symbol> stack = symbols.get(name);
-        if (stack == null || stack.isEmpty()) {
-            errorHandler.reportError(0, 0, 
-                "Undefined symbol: " + name, 
-                ErrorHandler.ErrorType.SEMANTIC);
-            return null;
-        }
-
-        // First look in current scope
-        for (int i = stack.size() - 1; i >= 0; i--) {
-            Symbol sym = stack.get(i);
-            if (sym.scope == currentScope) {
-                return sym;
-            }
-        }
-
-        // Then look for globals or symbols in outer scopes
-        for (int i = stack.size() - 1; i >= 0; i--) {
-            Symbol sym = stack.get(i);
-            if (sym.isGlobal || sym.scope < currentScope) {
-                return sym;
-            }
-        }
-
-        errorHandler.reportError(0, 0, 
-            "Symbol '" + name + "' not accessible in current scope", 
-            ErrorHandler.ErrorType.SEMANTIC);
-        return null;
-    }
-    
     
     public void setValue(String name, Object value) {
         if (!exists(name)) {
