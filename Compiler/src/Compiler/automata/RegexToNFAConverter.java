@@ -1,7 +1,6 @@
 package Compiler.automata;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 public class RegexToNFAConverter {
     private int stateCounter = 0;
