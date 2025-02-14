@@ -194,4 +194,8 @@ public class SymbolTable {
             }
         }
     }
+    
+    public int getCurrentScope() {
+        return currentScope;
+    }
 }

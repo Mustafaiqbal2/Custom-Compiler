@@ -34,16 +34,17 @@ public class Lexer {
     private static final Map<String, String> REGEX_PATTERNS;
     static {
         REGEX_PATTERNS = new HashMap<>();
-        // Simple patterns that work with Thompson Construction
         REGEX_PATTERNS.put("WHITESPACE", "(\\s)");
-        REGEX_PATTERNS.put("KEYWORD", "(global)|(function)|(var)|(integer)|(decimal)|(boolean)|(character)");
-        REGEX_PATTERNS.put("IDENTIFIER", "[a-z]([a-z])*");
-        REGEX_PATTERNS.put("INTEGER", "[0-9]([0-9])*");
-        REGEX_PATTERNS.put("DECIMAL", "[0-9]([0-9])*\\.[0-9]([0-9])*");
-        REGEX_PATTERNS.put("BOOLEAN", "(true)|(false)");
+        REGEX_PATTERNS.put("KEYWORD", "(global|function|var|integer|decimal|boolean|character)");
+        REGEX_PATTERNS.put("IDENTIFIER", "[a-z][a-z0-9]*");
+        REGEX_PATTERNS.put("INTEGER", "[0-9]+");
+        REGEX_PATTERNS.put("DECIMAL", "[0-9]+\\.[0-9]+");
+        REGEX_PATTERNS.put("BOOLEAN", "(true|false)");
         REGEX_PATTERNS.put("CHARACTER", "'[a-z]'");
-        REGEX_PATTERNS.put("OPERATOR", "(\\+)|(\\-)|(\\*)|(/)|(%)|(\\^)|(=)");
-        REGEX_PATTERNS.put("DELIMITER", "(\\()|(\\))|(\\{)|(\\})");
+        REGEX_PATTERNS.put("OPERATOR", "[+\\-*/%=^]");
+        REGEX_PATTERNS.put("DELIMITER", "[(){}]");
+        REGEX_PATTERNS.put("SINGLECOMMENT", "//[^\n]*");
+        REGEX_PATTERNS.put("MULTICOMMENT", "/\\*[\\s\\S]*?\\*/");
     }
     
     public Lexer(String input) {
@@ -95,29 +96,28 @@ public class Lexer {
 
     public void tokenize() {
         while (currentPosition < input.length()) {
-            String remaining = input.substring(currentPosition);
             boolean matched = false;
+            String remaining = input.substring(currentPosition);
 
-            for (TokenPattern pattern : TOKEN_PATTERNS) {
-                Matcher matcher = pattern.pattern.matcher(remaining);
-                if (matcher.find()) {
-                    String value = matcher.group(1);
-                    if (!pattern.skip) {
-                        Token token = createToken(pattern.type, value);
-                        if (token != null) {
-                            tokens.add(token);
-                            updateSymbolTable(token);
-                        }
-                    }
-                    updatePosition(value);
-                    matched = true;
-                    break;
-                }
+            // Handle scope changes
+            if (remaining.startsWith("{")) {
+                symbolTable.enterScope();
+            } else if (remaining.startsWith("}")) {
+                symbolTable.exitScope();
+            }
+
+            // Try each DFA for matching
+            TokenMatch bestMatch = findLongestMatch(remaining);
+
+            if (bestMatch != null) {
+                processToken(bestMatch);
+                matched = true;
             }
 
             if (!matched) {
-                errorHandler.reportError(lineNumber, columnNumber,
-                    "Invalid token: " + remaining.charAt(0),
+                // Report error for unrecognized token
+                errorHandler.reportError(lineNumber, columnNumber, 
+                    "Invalid token at position " + currentPosition,
                     ErrorHandler.ErrorType.LEXICAL);
                 currentPosition++;
                 columnNumber++;
@@ -126,18 +126,8 @@ public class Lexer {
 
         tokens.add(new Token(TokenType.EOF, "", lineNumber, columnNumber));
     }
+
     
-    private void updatePosition(String value) {
-        for (char c : value.toCharArray()) {
-            if (c == '\n') {
-                lineNumber++;
-                columnNumber = 1;
-            } else {
-                columnNumber++;
-            }
-        }
-        currentPosition += value.length();
-    }
     private void processToken(TokenMatch match) {
         String type = match.type();
         String value = match.value();
@@ -182,7 +172,23 @@ public class Lexer {
             default -> null;
         };
     }
+    private TokenMatch findLongestMatch(String input) {
+        TokenMatch longestMatch = null;
+        int maxLength = 0;
 
+        for (TokenPattern pattern : TOKEN_PATTERNS) {
+            Matcher matcher = pattern.pattern.matcher(input);
+            if (matcher.find()) {
+                String value = matcher.group(1);
+                if (value.length() > maxLength) {
+                    maxLength = value.length();
+                    longestMatch = new TokenMatch(pattern.type, value);
+                }
+            }
+        }
+
+        return longestMatch;
+    }
 
     private Token createOperatorToken(String op) {
         return new Token(switch (op) {
@@ -211,44 +217,44 @@ public class Lexer {
 
     private void updateSymbolTable(Token token) {
         switch (token.type) {
-            case IDENTIFIER:
+            case IDENTIFIER -> {
                 if (isDeclaration()) {
                     String type = getCurrentDeclarationType();
                     boolean isGlobal = isInGlobalScope();
                     symbolTable.add(token.value, type, isGlobal, null);
                 }
-                break;
-            case INTEGER_LITERAL:
-            case DECIMAL_LITERAL:
-            case BOOLEAN_LITERAL:
-            case CHARACTER_LITERAL:
+            }
+            case INTEGER_LITERAL, DECIMAL_LITERAL, BOOLEAN_LITERAL, CHARACTER_LITERAL -> {
                 String lastIdentifier = getLastIdentifier();
                 if (lastIdentifier != null) {
                     symbolTable.setValue(lastIdentifier, token.value);
                 }
-                break;
-		default:
-			break;
+            }
+            case FUNCTION -> symbolTable.enterScope();
+            case RBRACE -> symbolTable.exitScope();
+            default -> {}
         }
     }
-
+    
     private boolean isDeclaration() {
         if (tokens.isEmpty()) return false;
         Token lastToken = tokens.get(tokens.size() - 1);
-        return lastToken.type == TokenType.INTEGER || 
-               lastToken.type == TokenType.DECIMAL ||
-               lastToken.type == TokenType.BOOLEAN ||
-               lastToken.type == TokenType.CHARACTER;
+        return switch (lastToken.type) {
+            case INTEGER, DECIMAL, BOOLEAN, CHARACTER -> true;
+            default -> false;
+        };
     }
 
     private String getCurrentDeclarationType() {
         if (tokens.isEmpty()) return null;
-        return tokens.get(tokens.size() - 1).value;
+        Token lastToken = tokens.get(tokens.size() - 1);
+        return lastToken.value.toLowerCase();
     }
 
     private boolean isInGlobalScope() {
         return tokens.stream()
-            .anyMatch(t -> t.type == TokenType.GLOBAL);
+            .anyMatch(t -> t.type == TokenType.GLOBAL) && 
+            symbolTable.getCurrentScope() == 0;
     }
 
     private String getLastIdentifier() {
@@ -259,6 +265,12 @@ public class Lexer {
         }
         return null;
     }
+    
+ // Add method to get current scope
+    public int getCurrentScope() {
+        return symbolTable.getCurrentScope();
+    }
+
 
     public List<Token> getTokens() {
         return Collections.unmodifiableList(tokens);
