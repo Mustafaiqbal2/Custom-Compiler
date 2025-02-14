@@ -226,7 +226,7 @@ public class Lexer {
         switch (token.type) {
             case GLOBAL -> {
                 isNextGlobal = true;
-                isDeclaration = true;  // Also set declaration flag for global
+                isDeclaration = true;
             }
             case FUNCTION -> {
                 isFunctionDeclaration = true;
@@ -241,11 +241,16 @@ public class Lexer {
                 lastIdentifier = token.value;
                 
                 if (isDeclaration && currentDeclType != null) {
-                    // This is a declaration (either function or variable)
-                    boolean isGlobal = isNextGlobal || currentDeclType.equals("function");
-                    symbolTable.add(token.value, currentDeclType, isGlobal, null);
+                    // Only add if this is actually a declaration
+                    symbolTable.add(token.value, currentDeclType, isNextGlobal, null);
+                    // Reset declaration state immediately after adding the symbol
+                    if (!isFunctionDeclaration) {
+                        isDeclaration = false;
+                        currentDeclType = null;
+                        isNextGlobal = false;
+                    }
                 } else {
-                    // This is a reference
+                    // This is a reference - just lookup
                     Symbol symbol = symbolTable.lookup(token.value);
                     if (symbol == null) {
                         errorHandler.reportError(token.lineNumber, token.column,
@@ -258,12 +263,6 @@ public class Lexer {
                 if (lastIdentifier != null) {
                     symbolTable.setValue(lastIdentifier, token.value);
                     lastIdentifier = null;
-                    if (!isFunctionDeclaration) {
-                        // Reset declaration flags after value assignment for variables
-                        isDeclaration = false;
-                        currentDeclType = null;
-                        isNextGlobal = false;
-                    }
                 }
             }
             case LPAREN -> {
@@ -276,7 +275,6 @@ public class Lexer {
             }
             case LBRACE -> {
                 if (isFunctionDeclaration) {
-                    // We're already in function scope from LPAREN
                     isFunctionDeclaration = false;
                     currentDeclType = null;
                 } else if (!isNextGlobal) {
@@ -292,21 +290,27 @@ public class Lexer {
                 lastIdentifier = null;
             }
             case MULTIPLY, PLUS, MINUS, DIVIDE -> {
-                // Don't reset lastIdentifier for expressions
+                // For operators, we just need to keep lastIdentifier for expressions
+                // But make sure we're not in declaration mode
+                isDeclaration = false;
+                currentDeclType = null;
             }
             case ASSIGN -> {
-                // Don't reset states during assignment
+                // Don't reset anything on assignment, just keep the state
+                // but if we're not in a declaration, ensure declaration flags are off
+                if (!isDeclaration) {
+                    currentDeclType = null;
+                }
             }
             default -> {
                 if (!token.type.toString().contains("COMMENT")) {
-                    if (!isDeclaration && !token.type.toString().contains("LITERAL")) {
+                    if (!isDeclaration) {
                         lastIdentifier = null;
                     }
                 }
             }
         }
     }
-        
  // Add method to get current scope
     public int getCurrentScope() {
         return symbolTable.getCurrentScope();
