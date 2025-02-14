@@ -4,8 +4,8 @@ import java.util.*;
 import java.util.regex.*;
 
 public class Lexer {
-    private final String input;
-    private final List<Token> tokens;
+    private String input;
+    private List<Token> tokens;
     private int lineNumber;
     private int columnNumber;
 
@@ -20,7 +20,7 @@ public class Lexer {
         "(?<OPERATOR>[+\\-*/%=^])|" +
         "(?<DELIMITER>[(){}])|" +
         "(?<SINGLE_COMMENT>//[^\\n]*)|" +
-        "(?<MULTI_COMMENT>/\\*[^*]*\\*+(?:[^/*][^*]*\\*+)*/)"
+        "(?<MULTI_COMMENT>/\\*[^*]*\\*+(?:[^/*][^*]*\\*+)*/>)"  // Fixed the regex here
     );
 
     public Lexer(String input) {
@@ -32,11 +32,11 @@ public class Lexer {
 
     public void tokenize() {
         Matcher matcher = TOKEN_PATTERNS.matcher(input);
-        int lastMatch = 0;
-        
+        int lastEnd = 0;
+
         while (matcher.find()) {
-            // Update column number
-            columnNumber += matcher.start() - lastMatch;
+            // Update column counter
+            columnNumber += matcher.start() - lastEnd;
             
             if (matcher.group("WHITESPACE") != null) {
                 // Count newlines in whitespace
@@ -45,36 +45,34 @@ public class Lexer {
                     if (c == '\n') {
                         lineNumber++;
                         columnNumber = 1;
-                    } else {
-                        columnNumber++;
                     }
                 }
-            } else if (matcher.group("KEYWORD") != null) {
-                String keyword = matcher.group("KEYWORD").toUpperCase();
-                tokens.add(new Token(TokenType.valueOf(keyword), 
-                                   matcher.group("KEYWORD"), 
-                                   lineNumber, columnNumber));
-            } else if (matcher.group("IDENTIFIER") != null) {
+            }
+            else if (matcher.group("KEYWORD") != null) {
+                tokens.add(new Token(TokenType.valueOf(matcher.group("KEYWORD").toUpperCase()), 
+                                   matcher.group("KEYWORD"), lineNumber, columnNumber));
+            }
+            else if (matcher.group("IDENTIFIER") != null) {
                 tokens.add(new Token(TokenType.IDENTIFIER, 
-                                   matcher.group("IDENTIFIER"), 
-                                   lineNumber, columnNumber));
-            } else if (matcher.group("INTEGER") != null) {
+                                   matcher.group("IDENTIFIER"), lineNumber, columnNumber));
+            }
+            else if (matcher.group("INTEGER") != null) {
                 tokens.add(new Token(TokenType.INTEGER_LITERAL, 
-                                   matcher.group("INTEGER"), 
-                                   lineNumber, columnNumber));
-            } else if (matcher.group("DECIMAL") != null) {
+                                   matcher.group("INTEGER"), lineNumber, columnNumber));
+            }
+            else if (matcher.group("DECIMAL") != null) {
                 tokens.add(new Token(TokenType.DECIMAL_LITERAL, 
-                                   matcher.group("DECIMAL"), 
-                                   lineNumber, columnNumber));
-            } else if (matcher.group("BOOLEAN") != null) {
+                                   matcher.group("DECIMAL"), lineNumber, columnNumber));
+            }
+            else if (matcher.group("BOOLEAN") != null) {
                 tokens.add(new Token(TokenType.BOOLEAN_LITERAL, 
-                                   matcher.group("BOOLEAN"), 
-                                   lineNumber, columnNumber));
-            } else if (matcher.group("CHARACTER") != null) {
+                                   matcher.group("BOOLEAN"), lineNumber, columnNumber));
+            }
+            else if (matcher.group("CHARACTER") != null) {
                 tokens.add(new Token(TokenType.CHARACTER_LITERAL, 
-                                   matcher.group("CHARACTER"), 
-                                   lineNumber, columnNumber));
-            } else if (matcher.group("OPERATOR") != null) {
+                                   matcher.group("CHARACTER"), lineNumber, columnNumber));
+            }
+            else if (matcher.group("OPERATOR") != null) {
                 String op = matcher.group("OPERATOR");
                 TokenType type = switch(op) {
                     case "+" -> TokenType.PLUS;
@@ -87,17 +85,32 @@ public class Lexer {
                     default -> TokenType.UNKNOWN;
                 };
                 tokens.add(new Token(type, op, lineNumber, columnNumber));
-            } else if (matcher.group("SINGLE_COMMENT") != null) {
+            }
+            else if (matcher.group("DELIMITER") != null) {
+                String delim = matcher.group("DELIMITER");
+                TokenType type = switch(delim) {
+                    case "(" -> TokenType.LPAREN;
+                    case ")" -> TokenType.RPAREN;
+                    case "{" -> TokenType.LBRACE;
+                    case "}" -> TokenType.RBRACE;
+                    default -> TokenType.UNKNOWN;
+                };
+                tokens.add(new Token(type, delim, lineNumber, columnNumber));
+            }
+            else if (matcher.group("SINGLE_COMMENT") != null) {
                 tokens.add(new Token(TokenType.SINGLE_LINE_COMMENT, 
-                                   matcher.group("SINGLE_COMMENT"), 
-                                   lineNumber, columnNumber));
-            } else if (matcher.group("MULTI_COMMENT") != null) {
+                                   matcher.group("SINGLE_COMMENT"), lineNumber, columnNumber));
+            }
+            else if (matcher.group("MULTI_COMMENT") != null) {
                 tokens.add(new Token(TokenType.MULTI_LINE_COMMENT, 
-                                   matcher.group("MULTI_COMMENT"), 
-                                   lineNumber, columnNumber));
+                                   matcher.group("MULTI_COMMENT"), lineNumber, columnNumber));
+            }
+            else {
+                tokens.add(new Token(TokenType.UNKNOWN, 
+                                   matcher.group(), lineNumber, columnNumber));
             }
             
-            lastMatch = matcher.end();
+            lastEnd = matcher.end();
         }
         
         // Add EOF token

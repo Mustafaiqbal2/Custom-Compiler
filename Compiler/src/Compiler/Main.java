@@ -1,71 +1,103 @@
 package Compiler;
 
+import Compiler.automata.*;
+
 public class Main {
     public static void main(String[] args) {
-        // Test input with proper syntax according to our language
+        // Initialize error handler first as it will be needed by other components
+        ErrorHandler errorHandler = new ErrorHandler();
+        
+        // Test the lexer
         String code = """
-            global integer max = 100
-            
-            function main() {
-                integer x = 10
-                decimal y = 3.14159
-                character ch = 'a'
-                boolean isValid = true
+                global integer max = 100
                 
-                // This is a single line comment
-                /* This is a
-                   multi-line comment */
-                
-                decimal result = x + y
-            }
-            """;
+                /* This is a multi-line comment
+                   describing the main function */
+                function main() {
+                    integer x = 10
+                    decimal pi = 3.14159
+                    character ch = 'a'
+                    boolean isValid = true
+                    
+                    // Arithmetic operations
+                    decimal result = x * pi
+                }
+                """;
 
-        // Initialize components
+        System.out.println("=== Testing Lexical Analysis ===");
         Lexer lexer = new Lexer(code);
-        SymbolTable symbolTable = new SymbolTable();
-        ErrorHandler errorHandler = ErrorHandler.getInstance();
-
-        // Perform lexical analysis
-        System.out.println("Performing lexical analysis...");
         lexer.tokenize();
         
-        // Print tokens
-        System.out.println("\nTokens:");
+        System.out.println("Tokens:");
         for (Token token : lexer.getTokens()) {
-            System.out.printf("%s -> '%s' at line %d, column %d%n",
-                token.type,
-                token.value,
-                token.lineNumber,
-                token.column);
+            System.out.printf("%s -> %s (Line: %d)%n", 
+                            token.type, token.value, token.lineNumber);
         }
 
-        // Test symbol table
-        System.out.println("\nTesting symbol table...");
+        // Test Symbol Table
+        System.out.println("\n=== Testing Symbol Table ===");
+        SymbolTable symbolTable = new SymbolTable(errorHandler);
+        
+        // Add global variable
         symbolTable.add("max", "integer", true);
         symbolTable.setValue("max", 100);
         
-        symbolTable.enterScope(); // Enter main function scope
+        // Enter new scope
+        symbolTable.enterScope();
         symbolTable.add("x", "integer", false);
-        symbolTable.add("y", "decimal", false);
-        symbolTable.add("ch", "character", false);
-        symbolTable.add("isValid", "boolean", false);
-        symbolTable.add("result", "decimal", false);
-        
+        symbolTable.add("pi", "decimal", false);
         symbolTable.setValue("x", 10);
-        symbolTable.setValue("y", 3.14159);
-        symbolTable.setValue("ch", 'a');
-        symbolTable.setValue("isValid", true);
-        symbolTable.setValue("result", 13.14159);
+        symbolTable.setValue("pi", 3.14159);
         
-        // Display symbol table contents
+        // Test invalid operations to trigger error handling
+        symbolTable.add("123invalid", "integer", false); // Should report error
+        symbolTable.setValue("undefined", 42); // Should report error
+        symbolTable.setValue("pi", "not a number"); // Should report type error
+        
         symbolTable.displayTable();
+
+        // Test Error Handler
+        System.out.println("\n=== Testing Error Handler ===");
         
-        // Test error handling
-        System.out.println("\nTesting error handling...");
-        errorHandler.reportError(1, 1, "Test error message");
-        errorHandler.reportWarning(2, 1, "Test warning message");
-        
-        // Clean up
-        symbolTable.exitScope(); // Exit main function scope
+        // Test automata
+        System.out.println("\n=== Testing Automata ===");
+        try {
+            // Create a simple NFA for the pattern: (a|b)*abb
+            NFA nfa = new NFA();
+            State s0 = new State();
+            State s1 = new State();
+            State s2 = new State();
+            State s3 = new State();
+
+            nfa.setStartState(s0);
+            nfa.addAcceptingState(s3);
+
+            s0.addTransition('a', s0);
+            s0.addTransition('b', s0);
+            s0.addTransition('a', s1);
+            s1.addTransition('b', s2);
+            s2.addTransition('b', s3);
+
+            System.out.println("NFA Transition Table:");
+            nfa.displayTransitionTable();
+
+            DFA dfa = nfa.toDFA();
+            System.out.println("\nDFA Transition Table:");
+            dfa.displayTransitionTable();
+
+            // Test some inputs
+            String[] testInputs = {"abb", "aabb", "babb", "ab"};
+            for (String input : testInputs) {
+                System.out.printf("Testing input '%s': %s%n", 
+                                input, dfa.accepts(input) ? "Accepted" : "Rejected");
+            }
+        } catch (Exception e) {
+            errorHandler.reportError(0, 0, "Automata error: " + e.getMessage(), 
+                                   ErrorHandler.ErrorType.SEMANTIC);
+        }
+
+        // Display all collected errors at the end
+        System.out.println("\n=== Error Report ===");
+        errorHandler.displayErrors();
     }
 }
