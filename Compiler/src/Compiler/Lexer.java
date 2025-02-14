@@ -16,16 +16,17 @@ public class Lexer {
     private ErrorHandler errorHandler;
     private Map<String, NFA> nfaPatterns;
     private Map<String, DFA> dfaPatterns;
+ // Add these fields to track declaration state
+    private String currentDeclType = null;
+    private boolean isNextGlobal = false;
 
     private static class TokenPattern {
         final String type;
         final Pattern pattern;
-        final boolean skip;
 
         TokenPattern(String type, String regex, boolean skip) {
             this.type = type;
             this.pattern = Pattern.compile("^(" + regex + ")");
-            this.skip = skip;
         }
     }
 
@@ -215,60 +216,54 @@ public class Lexer {
 
 
     private void updateSymbolTable(Token token) {
+        if (token == null) return;
+
         switch (token.type) {
-            case IDENTIFIER:
-                if (isDeclaration()) {
-                    String type = getCurrentDeclarationType();
-                    boolean isGlobal = isInGlobalScope();
-                    if (type != null) {
-                        symbolTable.add(token.value, type, isGlobal, null);
-                    }
+            case GLOBAL -> {
+                // Mark next declaration as global
+                isNextGlobal = true;
+            }
+            case INTEGER, DECIMAL, BOOLEAN, CHARACTER -> {
+                // Store the current declaration type
+                currentDeclType = token.value.toLowerCase();
+            }
+            case IDENTIFIER -> {
+                if (currentDeclType != null) {
+                    // This is a declaration
+                    symbolTable.add(token.value, currentDeclType, isNextGlobal, null);
+                    currentDeclType = null;  // Reset after use
+                    isNextGlobal = false;    // Reset global flag
                 }
-                break;
-            case INTEGER_LITERAL:
-            case DECIMAL_LITERAL:
-            case BOOLEAN_LITERAL:
-            case CHARACTER_LITERAL:
+            }
+            case INTEGER_LITERAL, DECIMAL_LITERAL, BOOLEAN_LITERAL, CHARACTER_LITERAL -> {
+                // Find the last declared identifier and set its value
                 String lastIdentifier = getLastIdentifier();
                 if (lastIdentifier != null) {
                     symbolTable.setValue(lastIdentifier, token.value);
                 }
-                break;
-            case LBRACE:
+            }
+            case LBRACE -> {
                 symbolTable.enterScope();
-                break;
-            case RBRACE:
+            }
+            case RBRACE -> {
                 symbolTable.exitScope();
-                break;
-            default:
-                break;
+            }
+            default -> {}
         }
-    }
-
-    private boolean isDeclaration() {
-        if (tokens.isEmpty()) return false;
-        Token lastToken = tokens.get(tokens.size() - 1);
-        return lastToken.type == TokenType.INTEGER ||
-               lastToken.type == TokenType.DECIMAL ||
-               lastToken.type == TokenType.BOOLEAN ||
-               lastToken.type == TokenType.CHARACTER;
-    }
-    private String getCurrentDeclarationType() {
-        if (tokens.isEmpty()) return null;
-        Token lastToken = tokens.get(tokens.size() - 1);
-        return lastToken.value.toLowerCase();
-    }
-
-    private boolean isInGlobalScope() {
-        return tokens.stream()
-            .anyMatch(t -> t.type == TokenType.GLOBAL) && 
-            symbolTable.getCurrentScope() == 0;
     }
 
     private String getLastIdentifier() {
         for (int i = tokens.size() - 1; i >= 0; i--) {
-            if (tokens.get(i).type == TokenType.IDENTIFIER) {
-                return tokens.get(i).value;
+            Token t = tokens.get(i);
+            if (t.type == TokenType.IDENTIFIER) {
+                return t.value;
+            }
+            // Stop looking if we hit another declaration
+            if (t.type == TokenType.INTEGER || 
+                t.type == TokenType.DECIMAL || 
+                t.type == TokenType.BOOLEAN || 
+                t.type == TokenType.CHARACTER) {
+                break;
             }
         }
         return null;
