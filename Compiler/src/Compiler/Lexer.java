@@ -3,18 +3,6 @@ package Compiler;
 import java.util.*;
 import java.util.regex.*;
 
-// Token class to store token information
-class Token {
-    String type, value;
-    int lineNumber;
-
-    public Token(String type, String value, int lineNumber) {
-        this.type = type;
-        this.value = value;
-        this.lineNumber = lineNumber;
-    }
-}
-
 // Lexer class for tokenizing input
 class Lexer {
     private String input;
