@@ -28,9 +28,7 @@ public class Lexer {
     private static final Map<String, String> REGEX_PATTERNS;
 
     static {
-        // Initialize REGEX_PATTERNS first
-    	REGEX_PATTERNS = new HashMap<>();
-        // Keep the same patterns but without Java regex-specific syntax
+        REGEX_PATTERNS = new HashMap<>();
         REGEX_PATTERNS.put("WHITESPACE", "[ \t\r\n]");
         REGEX_PATTERNS.put("KEYWORD", "(global|function|var|integer|decimal|boolean|character)");
         REGEX_PATTERNS.put("IDENTIFIER", "[a-z][a-z0-9]*");
@@ -43,6 +41,7 @@ public class Lexer {
         REGEX_PATTERNS.put("SINGLECOMMENT", "//[^\n]*");
         REGEX_PATTERNS.put("MULTICOMMENT", "/[*]([^*]|[*]+[^*/])*[*]+/");
     }
+
 
     public Lexer(String input) {
         this.input = input;
@@ -88,7 +87,21 @@ public class Lexer {
             TokenMatch bestMatch = findLongestMatch(remaining);
             
             if (bestMatch != null) {
-                processToken(bestMatch);
+                // Create and process the token directly
+                Token token = createToken(bestMatch.type(), bestMatch.value());
+                if (token != null) {
+                    if (!isWhitespaceOrComment(token.type)) {
+                        tokens.add(token);
+                        updateSymbolTable(token);
+                    }
+                    if (token.type == TokenType.NEWLINE) {
+                        lineNumber++;
+                        columnNumber = 1;
+                    } else {
+                        columnNumber += bestMatch.value().length();
+                    }
+                }
+                currentPosition += bestMatch.value().length();
                 matched = true;
             }
 
@@ -104,30 +117,12 @@ public class Lexer {
         tokens.add(new Token(TokenType.EOF, "", lineNumber, columnNumber));
     }
     
-    private void processToken(TokenMatch match) {
-        String type = match.type();
-        String value = match.value();
-
-        TokenPattern matchedPattern = TOKEN_PATTERNS.stream()
-            .filter(p -> p.type.equals(type))
-            .findFirst()
-            .orElse(null);
-
-        if (matchedPattern != null && matchedPattern.skip) {
-            handleWhitespace(value);
-        } else {
-            Token token = createToken(type, value);
-            if (token != null) {
-                tokens.add(token);
-                updateSymbolTable(token);
-            }
-            columnNumber += value.length();
-        }
-        
-        currentPosition += value.length();
+    private boolean isWhitespaceOrComment(TokenType type) {
+        return type == TokenType.WHITESPACE || 
+               type == TokenType.SINGLE_LINE_COMMENT || 
+               type == TokenType.MULTI_LINE_COMMENT;
     }
-
-
+    
     private void handleWhitespace(String ws) {
         for (char c : ws.toCharArray()) {
             if (c == '\n') {
@@ -202,11 +197,13 @@ public class Lexer {
         
         for (int i = 0; i < input.length(); i++) {
             char c = input.charAt(i);
-            currentState = dfa.transition(currentState, c);
             
-            if (currentState == null) {
+            Map<Character, State> transitions = dfa.getTransitions(currentState);
+            if (!transitions.containsKey(c)) {
                 break; // No valid transition
             }
+            
+            currentState = transitions.get(c);
             
             if (dfa.isAccepting(currentState)) {
                 maxAcceptingPos = i + 1;
