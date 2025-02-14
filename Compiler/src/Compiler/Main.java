@@ -1,44 +1,66 @@
 package Compiler;
 
+import Compiler.automata.*;
+
 public class Main {
     public static void main(String[] args) {
-        // Test input code
-        String code = """
-                global integer max = 100
+        // Test patterns that cover different regex features
+        String[] patterns = {
+            "a",                    // Basic character
+            "a|b",                 // Union
+            "ab",                  // Concatenation
+            "a*",                  // Kleene star
+            "a+",                  // One or more
+            "a?",                  // Optional
+            "[a-z]",              // Character class
+            "(a|b)*abb",          // Complex pattern
+            "[0-9]+",             // One or more digits
+            "'[a-z]'",            // Character literal pattern
+            "[a-z][a-z0-9]*"      // Identifier pattern
+        };
+
+        RegexToNFAConverter converter = new RegexToNFAConverter();
+
+        for (String pattern : patterns) {
+            System.out.println("\n=== Testing Pattern: " + pattern + " ===");
+            
+            try {
+                // Convert regex to NFA
+                System.out.println("\nGenerating NFA...");
+                NFA nfa = converter.convert(pattern);
                 
-                /* This is a multi-line comment
-                   describing the main function */
-                function main() {
-                    integer x = 10
-                    decimal pi = 3.14159
-                    character ch = 'a'
-                    boolean isvalid = true
-                    
-                    // Arithmetic operations
-                    decimal result = x * pi
+                // Display NFA transition table
+                System.out.println("\nNFA Transition Table:");
+                nfa.displayTransitionTable();
+                
+                // Convert NFA to DFA
+                System.out.println("\nConverting to DFA...");
+                DFA dfa = nfa.toDFA();
+                
+                // Display DFA transition table
+                System.out.println("\nDFA Transition Table:");
+                dfa.displayTransitionTable();
+                
+                // Test some sample inputs
+                String[] testInputs = {
+                    "a", "b", "ab", "abb", "abbb", "baa",
+                    "123", "abc", "a1b2", "'a'", "x"
+                };
+                
+                System.out.println("\nTesting sample inputs:");
+                for (String input : testInputs) {
+                    boolean accepts = dfa.accepts(input);
+                    System.out.printf("Input %-6s : %s%n", 
+                        "'" + input + "'", 
+                        accepts ? "Accepted" : "Rejected");
                 }
-                """;
-
-        // Create lexer instance (now handles symbol table and automata internally)
-        Lexer lexer = new Lexer(code);
-        
-        // Perform lexical analysis
-        System.out.println("=== Testing Lexical Analysis ===");
-        lexer.tokenize();
-        
-        // Display tokens
-        System.out.println("Tokens:");
-        for (Token token : lexer.getTokens()) {
-            System.out.printf("%s -> %s (Line: %d)%n", 
-                            token.type, token.value, token.lineNumber);
+                
+                System.out.println("\n" + "=".repeat(50));
+                
+            } catch (Exception e) {
+                System.err.println("Error processing pattern '" + pattern + "': " + e.getMessage());
+                e.printStackTrace();
+            }
         }
-
-        // Display symbol table (now maintained by lexer)
-        System.out.println("\n=== Symbol Table ===");
-        lexer.getSymbolTable().displayTable();
-
-        // Display any errors that occurred during lexical analysis
-        System.out.println("\n=== Error Report ===");
-        lexer.getErrorHandler().displayErrors();
     }
 }
