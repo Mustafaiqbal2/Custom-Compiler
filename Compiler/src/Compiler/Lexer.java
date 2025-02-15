@@ -42,7 +42,7 @@ public class Lexer {
         REGEX_PATTERNS.put("CHARACTER", "character[^A-Za-z0-9_]");
         
         // Literals
-        REGEX_PATTERNS.put("DECIMAL_LITERAL", "[0-9]+\\.[0-9]+");  // Must come before INTEGER_LITERAL
+        REGEX_PATTERNS.put("DECIMAL_LITERAL", "[0-9]+\\.[0-9]+(?![.])");  // Must come before INTEGER_LITERAL
         REGEX_PATTERNS.put("INTEGER_LITERAL", "[0-9]+");
         REGEX_PATTERNS.put("BOOLEAN_LITERAL", "true[^A-Za-z0-9_]|false[^A-Za-z0-9_]");
         REGEX_PATTERNS.put("CHARACTER_LITERAL", "'([^'\\\\]|\\\\[ntr\\\\])'");

@@ -22,6 +22,20 @@ public class RegexToNFAConverter {
         while (i < regex.length()) {
             char c = regex.charAt(i);
             
+            if (c == '\\' && !escaped) {
+                processed.append(c); // Keep the backslash
+                escaped = true;
+                i++;
+                continue;
+            }
+            
+            if (escaped) {
+                processed.append(c); // Keep the escaped character as is
+                escaped = false;
+                i++;
+                continue;
+            }
+
             if (c == '[' && !escaped) {
                 inCharClass = true;
                 processed.append(c);
@@ -36,40 +50,25 @@ public class RegexToNFAConverter {
                 continue;
             }
             
-            if (c == '\\' && !escaped) {
-                escaped = true;
-                processed.append(c);
-                i++;
-                continue;
-            }
-            
-            if (escaped) {
-                processed.append(c);
-                escaped = false;
-                i++;
-                continue;
-            }
-            
             if (inCharClass) {
                 processed.append(c);
                 i++;
                 continue;
             }
-            
-            // Don't add concatenation before or after special characters
-            if (c == '(' || c == ')' || c == '|' || c == '*' || c == '+' || 
-                c == '?' || c == '^' || c == '$' || c == '\\') {
+
+            // Handle parentheses and operators
+            if (c == '(' || c == ')' || c == '*' || c == '+' || c == '?' || c == '|') {
                 processed.append(c);
                 i++;
                 continue;
             }
-            
+
             processed.append(c);
             
-            // Add concatenation only between valid regex components
+            // Add concatenation operator only when appropriate
             if (i < regex.length() - 1) {
                 char next = regex.charAt(i + 1);
-                if (shouldAddConcatenation(c, next)) {
+                if (shouldAddConcatenation(c, next) && !inCharClass) {
                     processed.append('.');
                 }
             }
@@ -80,16 +79,10 @@ public class RegexToNFAConverter {
     }
 
     private boolean shouldAddConcatenation(char current, char next) {
-        // Don't add concatenation in these cases
-        if (next == '*' || next == '+' || next == '?' || next == '|' || 
-            next == ')' || next == ']' || next == '$' || 
-            current == '(' || current == '[' || current == '|' || 
-            (current != '+' && current != '*' && current != '?' && current == '\\') || 
-            next == '\\') {
-            return false;
-        }
-        return true;
-    }
+        return !(next == '*' || next == '+' || next == '?' || next == '|' || 
+                 next == ')' || next == ']' || current == '(' || 
+                 current == '[' || current == '|' || current == '\\');
+    } 
     
     
     
