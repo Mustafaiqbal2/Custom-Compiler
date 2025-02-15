@@ -84,7 +84,8 @@ public class RegexToNFAConverter {
         if (next == '*' || next == '+' || next == '?' || next == '|' || 
             next == ')' || next == ']' || next == '$' || 
             current == '(' || current == '[' || current == '|' || 
-            current == '\\' || next == '\\') {
+            (current != '+' && current != '*' && current != '?' && current == '\\') || 
+            next == '\\') {
             return false;
         }
         return true;

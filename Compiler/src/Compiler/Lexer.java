@@ -45,7 +45,7 @@ public class Lexer {
         REGEX_PATTERNS.put("DECIMAL_LITERAL", "[0-9]+\\.[0-9]+");  // Must come before INTEGER_LITERAL
         REGEX_PATTERNS.put("INTEGER_LITERAL", "[0-9]+");
         REGEX_PATTERNS.put("BOOLEAN_LITERAL", "true[^A-Za-z0-9_]|false[^A-Za-z0-9_]");
-        REGEX_PATTERNS.put("CHARACTER_LITERAL", "'[^'\\\\]'|'\\\\[ntr\\\\]'");
+        REGEX_PATTERNS.put("CHARACTER_LITERAL", "'([^'\\\\]|\\\\[ntr\\\\])'");
         
         // Operators
         REGEX_PATTERNS.put("MULTIPLY", "\\*");
@@ -161,7 +161,8 @@ public class Lexer {
                 return new Token(TokenType.CHARACTER_LITERAL, charValue, lineNumber, columnNumber);
             }
             if (type.equals("BOOLEAN_LITERAL")) {
-                return new Token(TokenType.BOOLEAN_LITERAL, value, lineNumber, columnNumber);
+                String trimmedValue = value.replaceAll("[^A-Za-z0-9_]$", "");
+                return new Token(TokenType.BOOLEAN_LITERAL, trimmedValue, lineNumber, columnNumber);
             }
 
             // Direct conversion for other types
@@ -207,6 +208,15 @@ public class Lexer {
                 // Special handling for decimal literals to ensure they're not split
                 if (patternType.equals("DECIMAL_LITERAL")) {
                     if (matchedValue.contains(".")) {
+                        maxLength = length;
+                        longestMatch = new TokenMatch(patternType, matchedValue);
+                        continue;
+                    }
+                }
+                
+                // Special handling for character literals to ensure they're not split
+                if (patternType.equals("CHARACTER_LITERAL")) {
+                    if (matchedValue.startsWith("'") && matchedValue.endsWith("'")) {
                         maxLength = length;
                         longestMatch = new TokenMatch(patternType, matchedValue);
                         continue;
