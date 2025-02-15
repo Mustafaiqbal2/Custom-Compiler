@@ -17,81 +17,79 @@ public class RegexToNFAConverter {
         StringBuilder processed = new StringBuilder();
         boolean inCharClass = false;
         boolean escaped = false;
-
-        for (int i = 0; i < regex.length(); i++) {
+        int i = 0;
+        
+        while (i < regex.length()) {
             char c = regex.charAt(i);
             
+            // Handle escape sequences
             if (c == '\\' && !escaped) {
                 escaped = true;
+                i++;
                 continue;
             }
             
             if (escaped) {
-                // Handle escaped characters
-                switch (c) {
-                    case '*':
-                    case '+':
-                    case '?':
-                    case '|':
-                    case '.':
-                    case '\\':
-                    case '[':
-                    case ']':
-                    case '(':
-                    case ')':
-                    case '{':
-                    case '}':
-                        processed.append(c);
-                        break;
-                    case 'n':
-                        processed.append('\n');
-                        break;
-                    case 't':
-                        processed.append('\t');
-                        break;
-                    default:
-                        processed.append(c);
-                }
+                // Keep special characters escaped
+                processed.append('\\').append(c);
                 escaped = false;
+                i++;
                 continue;
             }
 
+            // Handle character classes
             if (c == '[' && !escaped) {
                 inCharClass = true;
                 processed.append(c);
+                i++;
                 continue;
             }
             
             if (c == ']' && !escaped) {
                 inCharClass = false;
                 processed.append(c);
+                i++;
+                continue;
+            }
+            
+            // When in character class, don't add concatenation
+            if (inCharClass) {
+                processed.append(c);
+                i++;
+                continue;
+            }
+            
+            // Handle special cases for operators
+            if (c == '*' || c == '+' || c == '?' || c == '|') {
+                processed.append(c);
+                i++;
                 continue;
             }
             
             processed.append(c);
             
-            if (!inCharClass && !escaped && i < regex.length() - 1) {
+            // Add concatenation only between appropriate characters
+            if (i < regex.length() - 1) {
                 char next = regex.charAt(i + 1);
                 if (shouldAddConcatenation(c, next)) {
                     processed.append('.');
                 }
             }
+            i++;
         }
         
         return processed.toString();
     }
+
     private boolean shouldAddConcatenation(char current, char next) {
-        // Don't add concatenation in these cases
-        if (current == '(' || next == ')' ||
-            current == '[' || next == ']' ||
-            next == '*' || next == '+' || next == '?' ||
-            next == '|' || current == '|' ||
-            next == '.') {
+        // Don't add concatenation before operators or after escape
+        if (next == '*' || next == '+' || next == '?' || next == '|' || 
+            next == ')' || next == ']' || current == '\\' ||
+            current == '(' || current == '[' || current == '|') {
             return false;
         }
         return true;
     }
-
     private String infixToPostfix(String infix) {
         StringBuilder postfix = new StringBuilder();
         Stack<Character> operators = new Stack<>();
@@ -190,46 +188,70 @@ public class RegexToNFAConverter {
 
     private NFA thompsonConstruction(String postfix) {
         Stack<NFA> stack = new Stack<>();
+        boolean escaped = false;
         
         for (int i = 0; i < postfix.length(); i++) {
             char c = postfix.charAt(i);
             
+            if (c == '\\' && !escaped) {
+                escaped = true;
+                continue;
+            }
+            
+            if (escaped) {
+                stack.push(createBasicNFA(c));
+                escaped = false;
+                continue;
+            }
+            
             if (c == '[') {
-                // Handle character class
                 StringBuilder charClass = new StringBuilder();
                 while (++i < postfix.length() && postfix.charAt(i) != ']') {
-                    charClass.append(postfix.charAt(i));
+                    if (postfix.charAt(i) == '\\') {
+                        charClass.append(postfix.charAt(++i));
+                    } else {
+                        charClass.append(postfix.charAt(i));
+                    }
                 }
                 stack.push(createCharacterClassNFA(charClass.toString()));
             } else if (!isOperator(c)) {
                 stack.push(createBasicNFA(c));
             } else {
-                switch (c) {
-                    case '|':
-                        NFA nfa2 = stack.pop();
-                        NFA nfa1 = stack.pop();
-                        stack.push(createUnionNFA(nfa1, nfa2));
-                        break;
-                    case '.':
-                        NFA second = stack.pop();
-                        NFA first = stack.pop();
-                        stack.push(createConcatenationNFA(first, second));
-                        break;
-                    case '*':
-                        stack.push(createKleeneStarNFA(stack.pop()));
-                        break;
-                    case '+':
-                        stack.push(createPlusNFA(stack.pop()));
-                        break;
-                    case '?':
-                        stack.push(createOptionalNFA(stack.pop()));
-                        break;
+                try {
+                    switch (c) {
+                        case '|':
+                            if (stack.size() < 2) throw new IllegalArgumentException("Invalid union operation");
+                            NFA nfa2 = stack.pop();
+                            NFA nfa1 = stack.pop();
+                            stack.push(createUnionNFA(nfa1, nfa2));
+                            break;
+                        case '.':
+                            if (stack.size() < 2) throw new IllegalArgumentException("Invalid concatenation operation");
+                            NFA second = stack.pop();
+                            NFA first = stack.pop();
+                            stack.push(createConcatenationNFA(first, second));
+                            break;
+                        case '*':
+                            if (stack.isEmpty()) throw new IllegalArgumentException("Invalid Kleene star operation");
+                            stack.push(createKleeneStarNFA(stack.pop()));
+                            break;
+                        case '+':
+                            if (stack.isEmpty()) throw new IllegalArgumentException("Invalid plus operation");
+                            stack.push(createPlusNFA(stack.pop()));
+                            break;
+                        case '?':
+                            if (stack.isEmpty()) throw new IllegalArgumentException("Invalid optional operation");
+                            stack.push(createOptionalNFA(stack.pop()));
+                            break;
+                    }
+                } catch (EmptyStackException e) {
+                    throw new IllegalArgumentException("Invalid regex expression: missing operand", e);
                 }
             }
         }
         
         if (stack.isEmpty()) {
-            throw new IllegalArgumentException("Invalid regex expression");
+            throw new IllegalArgumentException("Invalid regex expression: empty result");
         }
         
         return stack.pop();
@@ -252,18 +274,29 @@ public class RegexToNFAConverter {
     private NFA createCharacterClassNFA(String charClass) {
         Set<Character> validChars = new HashSet<>();
         boolean escaped = false;
+        boolean negated = false;
+        int i = 0;
         
-        for (int i = 0; i < charClass.length(); i++) {
+        // Check for negation
+        if (charClass.startsWith("^")) {
+            negated = true;
+            i++;
+        }
+        
+        // Process character class content
+        while (i < charClass.length()) {
             char c = charClass.charAt(i);
             
             if (c == '\\' && !escaped) {
                 escaped = true;
+                i++;
                 continue;
             }
             
             if (escaped) {
-                validChars.add(c);
+                validChars.add(charClass.charAt(i));
                 escaped = false;
+                i++;
                 continue;
             }
             
@@ -273,10 +306,20 @@ public class RegexToNFAConverter {
                 for (char ch = start; ch <= end; ch++) {
                     validChars.add(ch);
                 }
-                i += 2;
+                i += 3;
             } else {
                 validChars.add(c);
+                i++;
             }
+        }
+        
+        if (negated) {
+            Set<Character> allChars = new HashSet<>();
+            for (char c = 0; c < 128; c++) { // ASCII characters
+                allChars.add(c);
+            }
+            allChars.removeAll(validChars);
+            validChars = allChars;
         }
         
         NFA nfa = new NFA();

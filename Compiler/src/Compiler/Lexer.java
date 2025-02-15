@@ -1,9 +1,6 @@
 package Compiler;
 
 import java.util.*;
-import java.util.regex.Pattern;
-
-import Compiler.SymbolTable.Symbol;
 import Compiler.automata.*;
 
 public class Lexer {
