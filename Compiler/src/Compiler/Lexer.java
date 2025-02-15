@@ -30,17 +30,42 @@ public class Lexer {
     static {
         REGEX_PATTERNS = new LinkedHashMap<>();
         
-        // Simplified comment patterns that work with the NFA converter
-        REGEX_PATTERNS.put("MULTI_LINE_COMMENT", "/\\*.*\\*/");  // Simplified for now
-        REGEX_PATTERNS.put("SINGLE_LINE_COMMENT", "//.*");       // Simplified for now
+        // Fix multi-line comment pattern
+        REGEX_PATTERNS.put("MULTI_LINE_COMMENT", "/\\*([^*]|\\*+[^*/])*\\*+/");
         
-        // Whitespace
-        REGEX_PATTERNS.put("WHITESPACE", "[ \t\f\r\n]+");
+        // Fix single-line comment pattern
+        REGEX_PATTERNS.put("SINGLE_LINE_COMMENT", "//[^\n]*");
         
-        // Literals with proper patterns
+        // Fix character literal pattern - allow for escaped characters
+        REGEX_PATTERNS.put("CHARACTER_LITERAL", "'([^'\\\\]|\\\\.)'");
+        
+        // Fix decimal literal pattern
+        REGEX_PATTERNS.put("DECIMAL_LITERAL", "[0-9]+\\.[0-9]+");
+        
+        // Fix arithmetic operators
+        REGEX_PATTERNS.put("PLUS_OP", "\\+");
+        REGEX_PATTERNS.put("MINUS_OP", "-");
+        REGEX_PATTERNS.put("MULTIPLY_OP", "\\*");
+        REGEX_PATTERNS.put("DIVIDE_OP", "/");
+        REGEX_PATTERNS.put("MODULO_OP", "%");
+        REGEX_PATTERNS.put("ASSIGN_OP", "=");
+        REGEX_PATTERNS.put("EXPONENT_OP", "\\^");
+        
+        // Fix parentheses and braces
+        REGEX_PATTERNS.put("LPAREN_DELIM", "\\(");
+        REGEX_PATTERNS.put("RPAREN_DELIM", "\\)");
+        REGEX_PATTERNS.put("LBRACE_DELIM", "\\{");
+        REGEX_PATTERNS.put("RBRACE_DELIM", "\\}");
+        REGEX_PATTERNS.put("SEMICOLON", ";");
+        
+        // Keep existing patterns
+        REGEX_PATTERNS.put("WHITESPACE", "[ \t\n]+");
         REGEX_PATTERNS.put("BOOLEAN_LITERAL", "(true|false)");
-        REGEX_PATTERNS.put("CHARACTER_LITERAL", "'[^']'");
-        REGEX_PATTERNS.put("STRING_LITERAL", "\"[^\"]*\"");
+        REGEX_PATTERNS.put("INTEGER_LITERAL", "[0-9]+");
+        REGEX_PATTERNS.put("IDENTIFIER", "[A-Za-z_][A-Za-z0-9_]*");
+        
+        
+        
         
         // Keywords
         REGEX_PATTERNS.put("GLOBAL_KEYWORD", "global");
@@ -50,29 +75,7 @@ public class Lexer {
         REGEX_PATTERNS.put("DECIMAL_KEYWORD", "decimal");
         REGEX_PATTERNS.put("BOOLEAN_KEYWORD", "boolean");
         REGEX_PATTERNS.put("CHARACTER_KEYWORD", "character");
-        
-        // Numbers with more precise patterns
-        REGEX_PATTERNS.put("INTEGER_LITERAL", "[0-9]+");
-        REGEX_PATTERNS.put("DECIMAL_LITERAL", "[0-9]+\\.[0-9]+");
-        
-        // Identifier
-        REGEX_PATTERNS.put("IDENTIFIER", "[A-Za-z_][A-Za-z0-9_]*");
-        
-        // Operators
-        REGEX_PATTERNS.put("PLUS_OP", "\\+");
-        REGEX_PATTERNS.put("MINUS_OP", "-");
-        REGEX_PATTERNS.put("MULTIPLY_OP", "\\*");
-        REGEX_PATTERNS.put("DIVIDE_OP", "/");
-        REGEX_PATTERNS.put("MODULUS_OP", "%");
-        REGEX_PATTERNS.put("ASSIGN_OP", "=");
-        REGEX_PATTERNS.put("EXPONENT_OP", "\\^");
-        
-        // Delimiters
-        REGEX_PATTERNS.put("LPAREN_DELIM", "\\(");
-        REGEX_PATTERNS.put("RPAREN_DELIM", "\\)");
-        REGEX_PATTERNS.put("LBRACE_DELIM", "\\{");
-        REGEX_PATTERNS.put("RBRACE_DELIM", "\\}");
-        REGEX_PATTERNS.put("SEMICOLON", ";");
+
     }
 
 
