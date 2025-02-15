@@ -85,6 +85,66 @@ public class DFA {
             System.out.println();
         }
     }
+ // In DFA.java
+    public void displayDFA() {
+        System.out.println("\nDFA Structure:");
+        System.out.println("Start State: " + startState.getId());
+        
+        // Display accepting states
+        System.out.print("Accepting States: ");
+        StringBuilder accepting = new StringBuilder();
+        for (State state : acceptingStates) {
+            accepting.append(state.getId()).append(", ");
+        }
+        if (accepting.length() > 0) {
+            accepting.setLength(accepting.length() - 2); // Remove last ", "
+        }
+        System.out.println(accepting);
+        
+        // Get all states and sort them for consistent display
+        List<State> sortedStates = new ArrayList<>(getAllStates());
+        Collections.sort(sortedStates, new Comparator<State>() {
+            @Override
+            public int compare(State s1, State s2) {
+                return Integer.compare(s1.getId(), s2.getId());
+            }
+        });
+        
+        // Get all input symbols
+        Set<Character> symbols = new TreeSet<>();
+        for (State state : sortedStates) {
+            symbols.addAll(getTransitions(state).keySet());
+        }
+        
+        // Print transition table header
+        System.out.println("\nTransition Table:");
+        System.out.printf("%-10s|", "State");
+        for (char symbol : symbols) {
+            System.out.printf(" %-8s|", String.valueOf(symbol));
+        }
+        System.out.println();
+        
+        // Print separator line
+        StringBuilder separator = new StringBuilder();
+        for (int i = 0; i < 10 + symbols.size() * 9; i++) {
+            separator.append("-");
+        }
+        System.out.println(separator);
+        
+        // Print transitions for each state
+        for (State state : sortedStates) {
+            String stateStr = state.getId() + (acceptingStates.contains(state) ? "*" : " ");
+            System.out.printf("%-9s|", stateStr);
+            
+            Map<Character, State> stateTransitions = getTransitions(state);
+            for (char symbol : symbols) {
+                State target = stateTransitions.get(symbol);
+                System.out.printf(" %-8s|", target != null ? target.getId() : "-");
+            }
+            System.out.println();
+        }
+        System.out.println();
+    }
 
     public State getStartState() {
         return startState;

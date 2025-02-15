@@ -17,73 +17,82 @@ public class RegexToNFAConverter {
         StringBuilder processed = new StringBuilder();
         boolean inCharClass = false;
         boolean escaped = false;
-        int i = 0;
+        boolean inGroup = false;
         
-        while (i < regex.length()) {
+        for (int i = 0; i < regex.length(); i++) {
             char c = regex.charAt(i);
             
             if (c == '\\' && !escaped) {
-                processed.append(c); // Keep the backslash
                 escaped = true;
-                i++;
+                processed.append(c);
                 continue;
             }
             
-            if (escaped) {
-                processed.append(c); // Keep the escaped character as is
-                escaped = false;
-                i++;
-                continue;
-            }
-
             if (c == '[' && !escaped) {
                 inCharClass = true;
                 processed.append(c);
-                i++;
                 continue;
             }
             
             if (c == ']' && !escaped) {
                 inCharClass = false;
                 processed.append(c);
-                i++;
                 continue;
             }
             
-            if (inCharClass) {
+            if (c == '(' && !escaped) {
+                inGroup = true;
                 processed.append(c);
-                i++;
                 continue;
             }
-
-            // Handle parentheses and operators
-            if (c == '(' || c == ')' || c == '*' || c == '+' || c == '?' || c == '|') {
+            
+            if (c == ')' && !escaped) {
+                inGroup = false;
                 processed.append(c);
-                i++;
                 continue;
             }
-
+            
+            if (escaped) {
+                processed.append(c);
+                escaped = false;
+                continue;
+            }
+            
             processed.append(c);
             
-            // Add concatenation operator only when appropriate
-            if (i < regex.length() - 1) {
+            // Only add concatenation if:
+            // 1. Not in a character class
+            // 2. Not in a group
+            // 3. Not escaped
+            // 4. Next character exists and needs concatenation
+            if (!inCharClass && !inGroup && !escaped && i + 1 < regex.length()) {
                 char next = regex.charAt(i + 1);
-                if (shouldAddConcatenation(c, next) && !inCharClass) {
+                if (shouldAddConcatenation(c, next)) {
                     processed.append('.');
                 }
             }
-            i++;
         }
         
         return processed.toString();
     }
 
     private boolean shouldAddConcatenation(char current, char next) {
-        return !(next == '*' || next == '+' || next == '?' || next == '|' || 
-                 next == ')' || next == ']' || current == '(' || 
-                 current == '[' || current == '|' || current == '\\');
-    } 
-    
+        // Don't add concatenation in these cases
+        return !(current == '\\' || next == '\\' ||  // Escapes
+                current == '(' || next == ')' ||     // Groups
+                current == '[' || next == ']' ||     // Character classes
+                current == '|' || next == '|' ||     // Alternation
+                next == '*' || next == '+' || next == '?' || // Quantifiers
+                next == '.' ||                       // Explicit concatenation
+                (current == '.' && isMetaChar(next))); // Special case for dots
+    }
+
+    private boolean isMetaChar(char c) {
+        return c == '*' || c == '+' || c == '?' || c == '|' || 
+               c == '(' || c == ')' || c == '[' || c == ']' || 
+               c == '\\' || c == '.' || c == '^' || c == '$';
+    }
+
     
     
     private String infixToPostfix(String infix) {
@@ -178,73 +187,130 @@ public class RegexToNFAConverter {
 
     private NFA thompsonConstruction(String postfix) {
         Stack<NFA> stack = new Stack<>();
-        boolean escaped = false;
-        
+        StringBuilder group = new StringBuilder();
+        boolean inGroup = false;
+
         for (int i = 0; i < postfix.length(); i++) {
             char c = postfix.charAt(i);
-            
-            if (c == '\\' && !escaped) {
-                escaped = true;
+
+            // Handle character class groups
+            if (c == '[' && !inGroup) {
+                inGroup = true;
                 continue;
             }
             
-            if (escaped) {
-                stack.push(createBasicNFA(c));
-                escaped = false;
-                continue;
-            }
-            
-            if (c == '[') {
-                StringBuilder charClass = new StringBuilder();
-                while (++i < postfix.length() && postfix.charAt(i) != ']') {
-                    if (postfix.charAt(i) == '\\') {
-                        charClass.append(postfix.charAt(++i));  // Skip backslash and add next char
-                    } else {
-                        charClass.append(postfix.charAt(i));
-                    }
+            if (inGroup) {
+                if (c == ']') {
+                    inGroup = false;
+                    stack.push(createCharacterClassNFA(group.toString()));
+                    group = new StringBuilder();
+                } else {
+                    group.append(c);
                 }
-                stack.push(createCharacterClassNFA(charClass.toString()));
-            } else if (!isOperator(c)) {
-                stack.push(createBasicNFA(c));
-            } else {
+                continue;
+            }
+
+            // Handle special cases for literals
+            if (isLiteralStart(c)) {
+                StringBuilder literal = new StringBuilder();
+                literal.append(c);
+                while (i + 1 < postfix.length() && isLiteralPart(postfix.charAt(i + 1))) {
+                    literal.append(postfix.charAt(++i));
+                }
+                stack.push(createLiteralNFA(literal.toString()));
+                continue;
+            }
+
+            // Handle operators
+            if (isOperator(c)) {
                 try {
                     switch (c) {
-                        case '|':
-                            if (stack.size() < 2) throw new IllegalArgumentException("Invalid union operation");
-                            NFA nfa2 = stack.pop();
-                            NFA nfa1 = stack.pop();
-                            stack.push(createUnionNFA(nfa1, nfa2));
-                            break;
                         case '.':
-                            if (stack.size() < 2) throw new IllegalArgumentException("Invalid concatenation operation");
-                            NFA second = stack.pop();
-                            NFA first = stack.pop();
-                            stack.push(createConcatenationNFA(first, second));
+                            NFA right = stack.pop();
+                            NFA left = stack.pop();
+                            stack.push(createConcatenationNFA(left, right));
+                            break;
+                        case '|':
+                            NFA alt2 = stack.pop();
+                            NFA alt1 = stack.pop();
+                            stack.push(createUnionNFA(alt1, alt2));
                             break;
                         case '*':
-                            if (stack.isEmpty()) throw new IllegalArgumentException("Invalid Kleene star operation");
                             stack.push(createKleeneStarNFA(stack.pop()));
                             break;
                         case '+':
-                            if (stack.isEmpty()) throw new IllegalArgumentException("Invalid plus operation");
                             stack.push(createPlusNFA(stack.pop()));
                             break;
                         case '?':
-                            if (stack.isEmpty()) throw new IllegalArgumentException("Invalid optional operation");
                             stack.push(createOptionalNFA(stack.pop()));
                             break;
                     }
                 } catch (EmptyStackException e) {
                     throw new IllegalArgumentException("Invalid regex expression: missing operand");
                 }
+            } else {
+                stack.push(createBasicNFA(c));
             }
         }
-        
+
         if (stack.isEmpty()) {
             throw new IllegalArgumentException("Invalid regex expression");
         }
-        
+
         return stack.pop();
+    }
+
+    private boolean isLiteralStart(char c) {
+        return c == '\'' || Character.isDigit(c);
+    }
+
+    private boolean isLiteralPart(char c) {
+        return Character.isDigit(c) || c == '.' || c == '\\' || 
+               (c >= 'a' && c <= 'z') || c == '\'';
+    }
+
+    private NFA createLiteralNFA(String literal) {
+        if (literal.startsWith("'")) {
+            // Character literal
+            return createCharacterLiteralNFA(literal);
+        } else if (literal.contains(".")) {
+            // Decimal literal
+            return createDecimalLiteralNFA(literal);
+        }
+        // Other literals
+        return null;
+    }
+
+    private NFA createDecimalLiteralNFA(String decimal) {
+        NFA nfa = new NFA();
+        State start = createNewState();
+        State end = createNewState();
+        nfa.setStartState(start);
+        nfa.addAcceptingState(end);
+
+        State current = start;
+        for (int i = 0; i < decimal.length(); i++) {
+            State next = i == decimal.length() - 1 ? end : createNewState();
+            nfa.addTransition(current, decimal.charAt(i), next);
+            current = next;
+        }
+        return nfa;
+    }
+
+    private NFA createCharacterLiteralNFA(String charLiteral) {
+        NFA nfa = new NFA();
+        State start = createNewState();
+        State end = createNewState();
+        nfa.setStartState(start);
+        nfa.addAcceptingState(end);
+
+        State current = start;
+        for (int i = 0; i < charLiteral.length(); i++) {
+            State next = i == charLiteral.length() - 1 ? end : createNewState();
+            nfa.addTransition(current, charLiteral.charAt(i), next);
+            current = next;
+        }
+        return nfa;
     }
     
     private State createNewState() {

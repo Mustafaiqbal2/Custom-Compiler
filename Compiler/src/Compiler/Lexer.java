@@ -42,10 +42,10 @@ public class Lexer {
         REGEX_PATTERNS.put("CHARACTER", "character[^A-Za-z0-9_]");
         
         // Literals
-        REGEX_PATTERNS.put("DECIMAL_LITERAL", "[0-9]+\\.[0-9]+(?![.])");  // Must come before INTEGER_LITERAL
+        REGEX_PATTERNS.put("DECIMAL_LITERAL", "([0-9]+\\.[0-9]+)");
+        REGEX_PATTERNS.put("CHARACTER_LITERAL", "('[^']*')");
         REGEX_PATTERNS.put("INTEGER_LITERAL", "[0-9]+");
         REGEX_PATTERNS.put("BOOLEAN_LITERAL", "true[^A-Za-z0-9_]|false[^A-Za-z0-9_]");
-        REGEX_PATTERNS.put("CHARACTER_LITERAL", "'([^'\\\\]|\\\\[ntr\\\\])'");
         
         // Operators
         REGEX_PATTERNS.put("MULTIPLY", "\\*");
@@ -78,8 +78,52 @@ public class Lexer {
         this.nfaPatterns = new HashMap<>();
         this.dfaPatterns = new HashMap<>();
         convertRegexToDFA();
+        displayProblemPatternDFAs(); // Debug
     }
+ // In Lexer.java, after convertRegexToDFA()
+    private void displayProblemPatternDFAs() {
+        System.out.println("\n=== DFA Structures for Problem Patterns ===\n");
+        
+        // Display Decimal Literal DFA
+        System.out.println("DECIMAL_LITERAL DFA:");
+        System.out.println("Original Regex: " + REGEX_PATTERNS.get("DECIMAL_LITERAL"));
+        DFA decimalDFA = dfaPatterns.get("DECIMAL_LITERAL");
+        if (decimalDFA != null) {
+            decimalDFA.displayDFA();
+        }
+        
+        // Display Character Literal DFA
+        System.out.println("\nCHARACTER_LITERAL DFA:");
+        System.out.println("Original Regex: " + REGEX_PATTERNS.get("CHARACTER_LITERAL"));
+        DFA charLiteralDFA = dfaPatterns.get("CHARACTER_LITERAL");
+        if (charLiteralDFA != null) {
+            charLiteralDFA.displayDFA();
+        }
+        
+        // Display Character Keyword DFA
+        System.out.println("\nCHARACTER Keyword DFA:");
+        System.out.println("Original Regex: " + REGEX_PATTERNS.get("CHARACTER"));
+        DFA charKeywordDFA = dfaPatterns.get("CHARACTER");
+        if (charKeywordDFA != null) {
+            charKeywordDFA.displayDFA();
+        }
+        
+        // Display rest of the DFAs
+		for (Map.Entry<String, DFA> entry : dfaPatterns.entrySet()) {
+			String patternType = entry.getKey();
+			if (patternType.equals("DECIMAL_LITERAL") || patternType.equals("CHARACTER_LITERAL")
+					|| patternType.equals("CHARACTER")) {
+				continue;
+			}
 
+			System.out.println("\n" + patternType + " DFA:");
+			System.out.println("Original Regex: " + REGEX_PATTERNS.get(patternType));
+			DFA dfa = entry.getValue();
+			if (dfa != null) {
+				dfa.displayDFA();
+			}
+		}
+    }
     private void convertRegexToDFA() {
         RegexToNFAConverter converter = new RegexToNFAConverter();
 
