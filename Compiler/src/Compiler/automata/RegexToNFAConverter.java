@@ -189,6 +189,15 @@ public class RegexToNFAConverter {
         Stack<NFA> stack = new Stack<>();
         StringBuilder group = new StringBuilder();
         boolean inGroup = false;
+        
+        if(postfix.equals("\\+"))
+        {
+        	return createBasicNFA('+');
+        }
+		if (postfix.equals("\\*")) {
+			System.out.println("Creating * NFA");
+			return createBasicNFA('*');
+		}
 
         for (int i = 0; i < postfix.length(); i++) {
             char c = postfix.charAt(i);
@@ -226,9 +235,20 @@ public class RegexToNFAConverter {
                 try {
                     switch (c) {
                         case '.':
-                            NFA right = stack.pop();
-                            NFA left = stack.pop();
-                            stack.push(createConcatenationNFA(left, right));
+                            // Check if this is a literal decimal point (escaped) or concatenation operator
+                            if (i > 0 && (
+                                // Case 1: Explicitly escaped decimal point
+                                (postfix.charAt(i-1) == '\\') ||
+                                // Case 2: Inside a decimal literal - digit before and after
+                                (isDigit(postfix.charAt(i-1)) && i+1 < postfix.length() && isDigit(postfix.charAt(i+1)))
+                            )) {
+                                stack.push(createBasicNFA('.'));
+                            } else {
+                                // This is a concatenation operator
+                                NFA right = stack.pop();
+                                NFA left = stack.pop();
+                                stack.push(createConcatenationNFA(left, right));
+                            }
                             break;
                         case '|':
                             NFA alt2 = stack.pop();
@@ -260,6 +280,11 @@ public class RegexToNFAConverter {
         return stack.pop();
     }
 
+    // Add this helper method
+    private boolean isDigit(char c) {
+        return c >= '0' && c <= '9';
+    }
+    
     private boolean isLiteralStart(char c) {
         return c == '\'' || Character.isDigit(c);
     }

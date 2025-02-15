@@ -99,17 +99,17 @@ public class NFA {
         DFA dfa = new DFA();
         Map<Set<State>, State> dfaStates = new HashMap<>();
         Queue<Set<State>> unprocessed = new LinkedList<>();
-        AtomicInteger stateCounter = new AtomicInteger(1); // Using AtomicInteger for unique state IDs
+        AtomicInteger stateCounter = new AtomicInteger(0);
 
         // Get initial epsilon closure
         Set<State> initialSet = epsilonClosure(Set.of(startState));
-        State dfaStart = new State("d0");
+        State dfaStart = new State("d" + stateCounter.getAndIncrement());
         dfaStates.put(initialSet, dfaStart);
         unprocessed.add(initialSet);
         dfa.setStartState(dfaStart);
 
-        // Mark as accepting if any NFA state in initialSet is accepting.
-        if (isAnyAccepting(initialSet)) {
+        // Check if initial state should be accepting
+        if (containsAcceptingState(initialSet)) {
             dfa.addAcceptingState(dfaStart);
         }
 
@@ -117,63 +117,54 @@ public class NFA {
             Set<State> currentSet = unprocessed.poll();
             State currentDFAState = dfaStates.get(currentSet);
 
-            // For each input symbol in the NFA's alphabet
             for (char symbol : alphabet) {
-                Set<State> nextStateSet = epsilonClosure(move(currentSet, symbol));
-
-                if (!nextStateSet.isEmpty()) {
-                    // Create or get the existing DFA state
-                    State nextDFAState = dfaStates.computeIfAbsent(nextStateSet, k -> {
-                        State newState = new State("d" + stateCounter.getAndIncrement());
-                        if (isAnyAccepting(nextStateSet)) {
-                            dfa.addAcceptingState(newState);
+                Set<State> nextSet = epsilonClosure(move(currentSet, symbol));
+                
+                if (!nextSet.isEmpty()) {
+                    State nextDFAState = dfaStates.get(nextSet);
+                    if (nextDFAState == null) {
+                        nextDFAState = new State("d" + stateCounter.getAndIncrement());
+                        dfaStates.put(nextSet, nextDFAState);
+                        unprocessed.add(nextSet);
+                        
+                        if (containsAcceptingState(nextSet)) {
+                            dfa.addAcceptingState(nextDFAState);
                         }
-                        unprocessed.add(nextStateSet);
-                        return newState;
-                    });
-
-                    // Add transition in the DFA.
+                    }
                     dfa.addTransition(currentDFAState, symbol, nextDFAState);
                 }
             }
         }
-
+        
         return dfa;
     }
 
-    private boolean isAnyAccepting(Set<State> states) {
-        for (State s : states) {
-            if (s.isAccepting()) {
-                return true;
-            }
-        }
-        return false;
+    private boolean containsAcceptingState(Set<State> states) {
+        return states.stream().anyMatch(State::isAccepting);
     }
-    
-    private boolean isAcceptingStateSet(Set<State> states) {
-        // For concatenation, we need to make sure we've reached an accepting state
-        // through the proper sequence of transitions
-        for (State state : acceptingStates) {
-            if (!states.contains(state)) {
-                return false;
-            }
-        }
-        return true;
-    }
+
+
     private Set<State> epsilonClosure(Set<State> states) {
-        Set<State> closure = new HashSet<>(states);
+        Set<State> closure = new HashSet<>();
         Stack<State> stack = new Stack<>();
-        stack.addAll(states);
+        
+        // Add initial states to both closure and stack
+        for (State state : states) {
+            closure.add(state);
+            stack.push(state);
+        }
 
         while (!stack.isEmpty()) {
             State current = stack.pop();
-            for (State next : current.getTransitions('\0')) {
-                if (closure.add(next)) {
-                    stack.push(next);
+            Set<State> epsilonTransitions = current.getTransitions(EPSILON);
+            
+            for (State nextState : epsilonTransitions) {
+                if (closure.add(nextState)) {  // if this state hasn't been seen before
+                    stack.push(nextState);
                 }
             }
         }
-
+        
         return closure;
     }
 
