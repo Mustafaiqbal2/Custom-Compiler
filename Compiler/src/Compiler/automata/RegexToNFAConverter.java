@@ -22,10 +22,23 @@ public class RegexToNFAConverter {
         while (i < regex.length()) {
             char c = regex.charAt(i);
             
-            // Handle escape sequences
-            if (c == '\\' && !escaped) {
+            if (c == '[' && !escaped) {
+                inCharClass = true;
                 processed.append(c);
+                i++;
+                continue;
+            }
+            
+            if (c == ']' && !escaped) {
+                inCharClass = false;
+                processed.append(c);
+                i++;
+                continue;
+            }
+            
+            if (c == '\\' && !escaped) {
                 escaped = true;
+                processed.append(c);
                 i++;
                 continue;
             }
@@ -36,31 +49,16 @@ public class RegexToNFAConverter {
                 i++;
                 continue;
             }
-
-            // Handle character classes
-            if (c == '[') {
-                inCharClass = true;
-                processed.append(c);
-                i++;
-                continue;
-            }
             
-            if (c == ']') {
-                inCharClass = false;
-                processed.append(c);
-                i++;
-                continue;
-            }
-            
-            // When in character class, don't add concatenation
             if (inCharClass) {
                 processed.append(c);
                 i++;
                 continue;
             }
             
-            // Handle special operators
-            if (c == '*' || c == '+' || c == '?' || c == '|') {
+            // Don't add concatenation before or after special characters
+            if (c == '(' || c == ')' || c == '|' || c == '*' || c == '+' || 
+                c == '?' || c == '^' || c == '$' || c == '\\') {
                 processed.append(c);
                 i++;
                 continue;
@@ -68,7 +66,7 @@ public class RegexToNFAConverter {
             
             processed.append(c);
             
-            // Add concatenation when needed
+            // Add concatenation only between valid regex components
             if (i < regex.length() - 1) {
                 char next = regex.charAt(i + 1);
                 if (shouldAddConcatenation(c, next)) {
@@ -83,14 +81,15 @@ public class RegexToNFAConverter {
 
     private boolean shouldAddConcatenation(char current, char next) {
         // Don't add concatenation in these cases
-        if (next == '*' || next == '+' || next == '?' || 
-            next == '|' || next == ')' || next == ']' ||
-            current == '(' || current == '[' || current == '|' ||
+        if (next == '*' || next == '+' || next == '?' || next == '|' || 
+            next == ')' || next == ']' || next == '$' || 
+            current == '(' || current == '[' || current == '|' || 
             current == '\\' || next == '\\') {
             return false;
         }
         return true;
     }
+    
     
     
     private String infixToPostfix(String infix) {
@@ -106,60 +105,57 @@ public class RegexToNFAConverter {
         precedence.put('+', 3);
         precedence.put('?', 3);
         
-        int i = 0;
-        while (i < infix.length()) {
+        for (int i = 0; i < infix.length(); i++) {
             char c = infix.charAt(i);
             
             if (c == '\\' && !escaped) {
+                postfix.append(c);
                 escaped = true;
-                i++;
                 continue;
             }
             
             if (escaped) {
-                postfix.append('\\').append(infix.charAt(i));
+                postfix.append(c);
                 escaped = false;
-                i++;
                 continue;
             }
             
             if (c == '[') {
                 inCharClass = true;
                 StringBuilder charClass = new StringBuilder("[");
-                i++;
-                
-                while (i < infix.length() && inCharClass) {
+                while (++i < infix.length()) {
                     char curr = infix.charAt(i);
+                    charClass.append(curr);
+                    if (curr == ']') {
+                        inCharClass = false;
+                        break;
+                    }
                     if (curr == '\\') {
-                        charClass.append(curr).append(infix.charAt(i + 1));
-                        i += 2;
-                    } else {
-                        charClass.append(curr);
-                        if (curr == ']') inCharClass = false;
-                        i++;
+                        charClass.append(infix.charAt(++i));
                     }
                 }
                 postfix.append(charClass);
                 continue;
             }
             
-            if (c == '(' && !inCharClass) {
-                operators.push(c);
-            } else if (c == ')' && !inCharClass) {
-                while (!operators.isEmpty() && operators.peek() != '(') {
-                    postfix.append(operators.pop());
+            if (!inCharClass) {
+                if (c == '(') {
+                    operators.push(c);
+                } else if (c == ')') {
+                    while (!operators.isEmpty() && operators.peek() != '(') {
+                        postfix.append(operators.pop());
+                    }
+                    if (!operators.isEmpty()) operators.pop(); // Remove '('
+                } else if (isOperator(c)) {
+                    while (!operators.isEmpty() && operators.peek() != '(' && 
+                           precedence.get(operators.peek()) >= precedence.get(c)) {
+                        postfix.append(operators.pop());
+                    }
+                    operators.push(c);
+                } else {
+                    postfix.append(c);
                 }
-                if (!operators.isEmpty()) operators.pop(); // Remove '('
-            } else if (isOperator(c) && !inCharClass) {
-                while (!operators.isEmpty() && operators.peek() != '(' && 
-                       precedence.get(operators.peek()) >= precedence.get(c)) {
-                    postfix.append(operators.pop());
-                }
-                operators.push(c);
-            } else {
-                postfix.append(c);
             }
-            i++;
         }
         
         while (!operators.isEmpty()) {
@@ -208,7 +204,7 @@ public class RegexToNFAConverter {
                 StringBuilder charClass = new StringBuilder();
                 while (++i < postfix.length() && postfix.charAt(i) != ']') {
                     if (postfix.charAt(i) == '\\') {
-                        charClass.append(postfix.charAt(++i));
+                        charClass.append(postfix.charAt(++i));  // Skip backslash and add next char
                     } else {
                         charClass.append(postfix.charAt(i));
                     }
@@ -245,13 +241,13 @@ public class RegexToNFAConverter {
                             break;
                     }
                 } catch (EmptyStackException e) {
-                    throw new IllegalArgumentException("Invalid regex expression: missing operand", e);
+                    throw new IllegalArgumentException("Invalid regex expression: missing operand");
                 }
             }
         }
         
         if (stack.isEmpty()) {
-            throw new IllegalArgumentException("Invalid regex expression: empty result");
+            throw new IllegalArgumentException("Invalid regex expression");
         }
         
         return stack.pop();

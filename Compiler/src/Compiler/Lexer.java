@@ -27,54 +27,45 @@ public class Lexer {
     static {
         REGEX_PATTERNS = new LinkedHashMap<>();
         
-        // Fix multi-line comment pattern
+        // Whitespace and comments (highest priority)
+        REGEX_PATTERNS.put("WHITESPACE", "[ \t\n]+");
         REGEX_PATTERNS.put("MULTI_LINE_COMMENT", "/\\*([^*]|\\*+[^*/])*\\*+/");
-        
-        // Fix single-line comment pattern
         REGEX_PATTERNS.put("SINGLE_LINE_COMMENT", "//[^\n]*");
         
-        // Fix character literal pattern - allow for escaped characters
-        REGEX_PATTERNS.put("CHARACTER_LITERAL", "'([^'\\\\]|\\\\.)'");
+        // Keywords must come before identifiers and must match exactly
+        REGEX_PATTERNS.put("GLOBAL", "global[^A-Za-z0-9_]");
+        REGEX_PATTERNS.put("FUNCTION", "function[^A-Za-z0-9_]");
+        REGEX_PATTERNS.put("VAR", "var[^A-Za-z0-9_]");
+        REGEX_PATTERNS.put("INTEGER", "integer[^A-Za-z0-9_]");
+        REGEX_PATTERNS.put("DECIMAL", "decimal[^A-Za-z0-9_]");
+        REGEX_PATTERNS.put("BOOLEAN", "boolean[^A-Za-z0-9_]");
+        REGEX_PATTERNS.put("CHARACTER", "character[^A-Za-z0-9_]");
         
-        // Fix decimal literal pattern
-        REGEX_PATTERNS.put("DECIMAL_LITERAL", "[0-9]+\\.[0-9]+");
+        // Literals
+        REGEX_PATTERNS.put("DECIMAL_LITERAL", "[0-9]+\\.[0-9]+");  // Must come before INTEGER_LITERAL
+        REGEX_PATTERNS.put("INTEGER_LITERAL", "[0-9]+");
+        REGEX_PATTERNS.put("BOOLEAN_LITERAL", "true[^A-Za-z0-9_]|false[^A-Za-z0-9_]");
+        REGEX_PATTERNS.put("CHARACTER_LITERAL", "'[^'\\\\]'|'\\\\[ntr\\\\]'");
         
-        // Fix arithmetic operators
-        REGEX_PATTERNS.put("PLUS_OP", "\\+");
-        REGEX_PATTERNS.put("MINUS_OP", "-");
-        REGEX_PATTERNS.put("MULTIPLY_OP", "\\*");
-        REGEX_PATTERNS.put("DIVIDE_OP", "/");
-        REGEX_PATTERNS.put("MODULO_OP", "%");
-        REGEX_PATTERNS.put("ASSIGN_OP", "=");
-        REGEX_PATTERNS.put("EXPONENT_OP", "\\^");
+        // Operators
+        REGEX_PATTERNS.put("MULTIPLY", "\\*");
+        REGEX_PATTERNS.put("PLUS", "\\+");
+        REGEX_PATTERNS.put("MINUS", "-");
+        REGEX_PATTERNS.put("DIVIDE", "/");
+        REGEX_PATTERNS.put("MODULO", "%");
+        REGEX_PATTERNS.put("EXPONENT", "\\^");
+        REGEX_PATTERNS.put("ASSIGN", "=");
         
-        // Fix parentheses and braces
-        REGEX_PATTERNS.put("LPAREN_DELIM", "\\(");
-        REGEX_PATTERNS.put("RPAREN_DELIM", "\\)");
-        REGEX_PATTERNS.put("LBRACE_DELIM", "\\{");
-        REGEX_PATTERNS.put("RBRACE_DELIM", "\\}");
+        // Delimiters
+        REGEX_PATTERNS.put("LPAREN", "\\(");
+        REGEX_PATTERNS.put("RPAREN", "\\)");
+        REGEX_PATTERNS.put("LBRACE", "\\{");
+        REGEX_PATTERNS.put("RBRACE", "\\}");
         REGEX_PATTERNS.put("SEMICOLON", ";");
         
-        // Keep existing patterns
-        REGEX_PATTERNS.put("WHITESPACE", "[ \t\n]+");
-        REGEX_PATTERNS.put("BOOLEAN_LITERAL", "(true|false)");
-        REGEX_PATTERNS.put("INTEGER_LITERAL", "[0-9]+");
+        // Identifier must come last
         REGEX_PATTERNS.put("IDENTIFIER", "[A-Za-z_][A-Za-z0-9_]*");
-        
-        
-        
-        
-        // Keywords
-        REGEX_PATTERNS.put("GLOBAL_KEYWORD", "global");
-        REGEX_PATTERNS.put("FUNCTION_KEYWORD", "function");
-        REGEX_PATTERNS.put("VAR_KEYWORD", "var");
-        REGEX_PATTERNS.put("INTEGER_KEYWORD", "integer");
-        REGEX_PATTERNS.put("DECIMAL_KEYWORD", "decimal");
-        REGEX_PATTERNS.put("BOOLEAN_KEYWORD", "boolean");
-        REGEX_PATTERNS.put("CHARACTER_KEYWORD", "character");
-
     }
-
 
     public Lexer(String input) {
         this.input = input;
@@ -154,8 +145,27 @@ public class Lexer {
 
     private Token createToken(String type, String value) {
         try {
-            TokenType tokenType = TokenType.valueOf(type);
-            return new Token(tokenType, value, lineNumber, columnNumber);
+            // Handle special cases first
+            if (type.equals("INTEGER_LITERAL")) {
+                return new Token(TokenType.INTEGER_LITERAL, value, lineNumber, columnNumber);
+            }
+            if (type.equals("DECIMAL_LITERAL")) {
+                return new Token(TokenType.DECIMAL_LITERAL, value, lineNumber, columnNumber);
+            }
+            if (type.equals("CHARACTER_LITERAL")) {
+                // Strip quotes from character literals
+                String charValue = value;
+                if (value.length() >= 2 && value.startsWith("'") && value.endsWith("'")) {
+                    charValue = value.substring(1, value.length() - 1);
+                }
+                return new Token(TokenType.CHARACTER_LITERAL, charValue, lineNumber, columnNumber);
+            }
+            if (type.equals("BOOLEAN_LITERAL")) {
+                return new Token(TokenType.BOOLEAN_LITERAL, value, lineNumber, columnNumber);
+            }
+
+            // Direct conversion for other types
+            return new Token(TokenType.valueOf(type), value, lineNumber, columnNumber);
         } catch (IllegalArgumentException e) {
             errorHandler.reportError(lineNumber, columnNumber,
                 "Invalid token type: " + type,
@@ -163,12 +173,13 @@ public class Lexer {
             return null;
         }
     }
-
+    
+    
     private TokenMatch findLongestMatch(String input) {
         TokenMatch longestMatch = null;
         int maxLength = 0;
 
-        // Check for comments first (they have highest priority)
+        // Handle comments first
         if (input.startsWith("//")) {
             int endIdx = input.indexOf('\n');
             if (endIdx == -1) endIdx = input.length();
@@ -182,7 +193,7 @@ public class Lexer {
             }
         }
 
-        // Try each DFA pattern
+        // Try each pattern in order of definition
         for (Map.Entry<String, DFA> entry : dfaPatterns.entrySet()) {
             String patternType = entry.getKey();
             DFA dfa = entry.getValue();
@@ -191,57 +202,24 @@ public class Lexer {
             
             int length = findLongestAcceptingPrefix(dfa, input);
             if (length > maxLength) {
-                maxLength = length;
                 String matchedValue = input.substring(0, length);
-                String tokenType = patternType;
                 
-                // Handle special cases for literals
-                if (patternType.equals("INTEGER_LITERAL") || 
-                    patternType.equals("DECIMAL_LITERAL") ||
-                    patternType.equals("BOOLEAN_LITERAL") ||
-                    patternType.equals("CHARACTER_LITERAL")) {
-                    tokenType = patternType;  // Keep the literal type
-                } else {
-                    tokenType = mapPatternTypeToTokenType(patternType);
+                // Special handling for decimal literals to ensure they're not split
+                if (patternType.equals("DECIMAL_LITERAL")) {
+                    if (matchedValue.contains(".")) {
+                        maxLength = length;
+                        longestMatch = new TokenMatch(patternType, matchedValue);
+                        continue;
+                    }
                 }
                 
-                longestMatch = new TokenMatch(tokenType, matchedValue);
+                // Handle all other cases
+                maxLength = length;
+                longestMatch = new TokenMatch(patternType, matchedValue);
             }
         }
         
         return longestMatch;
-    }
-
-    private String mapPatternTypeToTokenType(String patternType) {
-        return switch (patternType) {
-            case "WHITESPACE" -> "WHITESPACE";
-            case "SINGLE_LINE_COMMENT" -> "SINGLE_LINE_COMMENT";
-            case "MULTI_LINE_COMMENT" -> "MULTI_LINE_COMMENT";
-            case "BOOLEAN_LITERAL" -> "BOOLEAN_LITERAL";
-            case "CHARACTER_LITERAL" -> "CHARACTER_LITERAL";
-            case "GLOBAL_KEYWORD" -> "GLOBAL";
-            case "FUNCTION_KEYWORD" -> "FUNCTION";
-            case "VAR_KEYWORD" -> "VAR";
-            case "INTEGER_KEYWORD" -> "INTEGER";
-            case "DECIMAL_KEYWORD" -> "DECIMAL";
-            case "BOOLEAN_KEYWORD" -> "BOOLEAN";
-            case "CHARACTER_KEYWORD" -> "CHARACTER";
-            case "NUMBER" -> "INTEGER_LITERAL"; // (Handled specially in findLongestMatch)
-            case "IDENTIFIER" -> "IDENTIFIER";
-            case "PLUS_OP" -> "PLUS";
-            case "MINUS_OP" -> "MINUS";
-            case "MULTIPLY_OP" -> "MULTIPLY";
-            case "DIVIDE_OP" -> "DIVIDE";
-            case "MODULUS_OP" -> "MODULUS";
-            case "ASSIGN_OP" -> "ASSIGN";
-            case "EXPONENT_OP" -> "EXPONENT";
-            case "LPAREN_DELIM" -> "LPAREN";
-            case "RPAREN_DELIM" -> "RPAREN";
-            case "LBRACE_DELIM" -> "LBRACE";
-            case "RBRACE_DELIM" -> "RBRACE";
-            case "SEMICOLON" -> "SEMICOLON";
-            default -> "UNKNOWN";
-        };
     }
 
     private int findLongestAcceptingPrefix(DFA dfa, String input) {

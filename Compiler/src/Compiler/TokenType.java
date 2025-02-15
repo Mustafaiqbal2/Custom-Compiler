@@ -39,5 +39,5 @@ public enum TokenType {
     
     // Special
     UNKNOWN,
-    EOF, NEWLINE, WHITESPACE
+    EOF, NEWLINE, WHITESPACE, MODULO
 }
