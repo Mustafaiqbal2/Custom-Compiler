@@ -12,7 +12,6 @@ public class RegexToNFAConverter {
         return infixToPostfix(preprocessed);
     }
 
-   
     private String preprocess(String regex) {
         StringBuilder processed = new StringBuilder();
         boolean inCharClass = false;
@@ -63,12 +62,11 @@ public class RegexToNFAConverter {
             // Only add concatenation if:
             // 1. Not in a character class
             // 2. Not in a group
-            // 3. Not escaped
-            // 4. Next character exists and needs concatenation
-            if (!inCharClass && !inGroup && !escaped && i + 1 < regex.length()) {
+            // 3. Next character exists and needs concatenation
+            if (!inCharClass && !inGroup && i + 1 < regex.length()) {
                 char next = regex.charAt(i + 1);
                 if (shouldAddConcatenation(c, next)) {
-                    processed.append('.');
+                    processed.append('#');  // Use '#' for concatenation instead of '.'
                 }
             }
         }
@@ -83,18 +81,16 @@ public class RegexToNFAConverter {
                 current == '[' || next == ']' ||     // Character classes
                 current == '|' || next == '|' ||     // Alternation
                 next == '*' || next == '+' || next == '?' || // Quantifiers
-                next == '.' ||                       // Explicit concatenation
-                (current == '.' && isMetaChar(next))); // Special case for dots
+                next == '#' ||                       // Explicit concatenation (now '#')
+                (current == '#' && isMetaChar(next))); // Special case for concatenation operator
     }
 
     private boolean isMetaChar(char c) {
         return c == '*' || c == '+' || c == '?' || c == '|' || 
                c == '(' || c == ')' || c == '[' || c == ']' || 
-               c == '\\' || c == '.' || c == '^' || c == '$';
+               c == '\\' || c == '#' || c == '^' || c == '$';
     }
 
-    
-    
     private String infixToPostfix(String infix) {
         StringBuilder postfix = new StringBuilder();
         Stack<Character> operators = new Stack<>();
@@ -103,23 +99,21 @@ public class RegexToNFAConverter {
         boolean escaped = false;
         
         precedence.put('|', 1);
-        precedence.put('.', 2);
+        precedence.put('#', 2);  // '#' is the concatenation operator now
         precedence.put('*', 3);
         precedence.put('+', 3);
         precedence.put('?', 3);
-        
+
         for (int i = 0; i < infix.length(); i++) {
             char c = infix.charAt(i);
             
-            if (c == '\\' && !escaped) {
-                postfix.append(c);
-                escaped = true;
-                continue;
-            }
-            
-            if (escaped) {
-                postfix.append(c);
-                escaped = false;
+            // Handle escape sequences as one unit.
+            if (c == '\\') {
+                if (i + 1 < infix.length()) {
+                    // Append the entire escape sequence as a single token.
+                    postfix.append('\\');
+                    postfix.append(infix.charAt(++i));
+                }
                 continue;
             }
             
@@ -133,7 +127,7 @@ public class RegexToNFAConverter {
                         inCharClass = false;
                         break;
                     }
-                    if (curr == '\\') {
+                    if (curr == '\\' && i + 1 < infix.length()) {
                         charClass.append(infix.charAt(++i));
                     }
                 }
@@ -148,9 +142,10 @@ public class RegexToNFAConverter {
                     while (!operators.isEmpty() && operators.peek() != '(') {
                         postfix.append(operators.pop());
                     }
-                    if (!operators.isEmpty()) operators.pop(); // Remove '('
+                    if (!operators.isEmpty())
+                        operators.pop(); // Remove '('
                 } else if (isOperator(c)) {
-                    while (!operators.isEmpty() && operators.peek() != '(' && 
+                    while (!operators.isEmpty() && operators.peek() != '(' &&
                            precedence.get(operators.peek()) >= precedence.get(c)) {
                         postfix.append(operators.pop());
                     }
@@ -160,17 +155,18 @@ public class RegexToNFAConverter {
                 }
             }
         }
-        
+
         while (!operators.isEmpty()) {
             char op = operators.pop();
-            if (op != '(') postfix.append(op);
+            if (op != '(')
+                postfix.append(op);
         }
-        
+
         return postfix.toString();
     }
 
     private boolean isOperator(char c) {
-        return c == '|' || c == '.' || c == '*' || c == '+' || c == '?';
+        return c == '|' || c == '#' || c == '*' || c == '+' || c == '?';
     }
 
     public NFA convert(String regex) {
@@ -190,14 +186,13 @@ public class RegexToNFAConverter {
         StringBuilder group = new StringBuilder();
         boolean inGroup = false;
         
-        if(postfix.equals("\\+"))
-        {
-        	return createBasicNFA('+');
+        if(postfix.equals("\\+")) {
+            return createBasicNFA('+');
         }
-		if (postfix.equals("\\*")) {
-			System.out.println("Creating * NFA");
-			return createBasicNFA('*');
-		}
+        if (postfix.equals("\\*")) {
+            System.out.println("Creating * NFA");
+            return createBasicNFA('*');
+        }
 
         for (int i = 0; i < postfix.length(); i++) {
             char c = postfix.charAt(i);
@@ -234,21 +229,10 @@ public class RegexToNFAConverter {
             if (isOperator(c)) {
                 try {
                     switch (c) {
-                        case '.':
-                            // Check if this is a literal decimal point (escaped) or concatenation operator
-                            if (i > 0 && (
-                                // Case 1: Explicitly escaped decimal point
-                                (postfix.charAt(i-1) == '\\') ||
-                                // Case 2: Inside a decimal literal - digit before and after
-                                (isDigit(postfix.charAt(i-1)) && i+1 < postfix.length() && isDigit(postfix.charAt(i+1)))
-                            )) {
-                                stack.push(createBasicNFA('.'));
-                            } else {
-                                // This is a concatenation operator
-                                NFA right = stack.pop();
-                                NFA left = stack.pop();
-                                stack.push(createConcatenationNFA(left, right));
-                            }
+                        case '#':  // Concatenation operator
+                            NFA right = stack.pop();
+                            NFA left = stack.pop();
+                            stack.push(createConcatenationNFA(left, right));
                             break;
                         case '|':
                             NFA alt2 = stack.pop();
@@ -280,11 +264,11 @@ public class RegexToNFAConverter {
         return stack.pop();
     }
 
-    // Add this helper method
+    // Helper method
     private boolean isDigit(char c) {
         return c >= '0' && c <= '9';
     }
-    
+
     private boolean isLiteralStart(char c) {
         return c == '\'' || Character.isDigit(c);
     }
@@ -296,13 +280,10 @@ public class RegexToNFAConverter {
 
     private NFA createLiteralNFA(String literal) {
         if (literal.startsWith("'")) {
-            // Character literal
             return createCharacterLiteralNFA(literal);
-        } else if (literal.contains(".")) {
-            // Decimal literal
+        } else if (literal.contains(".") ) {
             return createDecimalLiteralNFA(literal);
         }
-        // Other literals
         return null;
     }
 
@@ -315,7 +296,7 @@ public class RegexToNFAConverter {
 
         State current = start;
         for (int i = 0; i < decimal.length(); i++) {
-            State next = i == decimal.length() - 1 ? end : createNewState();
+            State next = (i == decimal.length() - 1) ? end : createNewState();
             nfa.addTransition(current, decimal.charAt(i), next);
             current = next;
         }
@@ -331,17 +312,17 @@ public class RegexToNFAConverter {
 
         State current = start;
         for (int i = 0; i < charLiteral.length(); i++) {
-            State next = i == charLiteral.length() - 1 ? end : createNewState();
+            State next = (i == charLiteral.length() - 1) ? end : createNewState();
             nfa.addTransition(current, charLiteral.charAt(i), next);
             current = next;
         }
         return nfa;
     }
-    
+
     private State createNewState() {
         return new State("s" + stateCounter++);
     }
-    
+
     private NFA createBasicNFA(char c) {
         NFA nfa = new NFA();
         State start = createNewState();
@@ -358,13 +339,11 @@ public class RegexToNFAConverter {
         boolean negated = false;
         int i = 0;
         
-        // Check for negation
         if (charClass.startsWith("^")) {
             negated = true;
             i++;
         }
         
-        // Process character class content
         while (i < charClass.length()) {
             char c = charClass.charAt(i);
             
@@ -396,7 +375,7 @@ public class RegexToNFAConverter {
         
         if (negated) {
             Set<Character> allChars = new HashSet<>();
-            for (char c = 0; c < 128; c++) { // ASCII characters
+            for (char c = 0; c < 128; c++) {
                 allChars.add(c);
             }
             allChars.removeAll(validChars);
@@ -424,11 +403,9 @@ public class RegexToNFAConverter {
         nfa.setStartState(start);
         nfa.addAcceptingState(end);
         
-        // Add epsilon transitions
         nfa.addEpsilonTransition(start, first.getStartState());
         nfa.addEpsilonTransition(start, second.getStartState());
         
-        // Add epsilon transitions from accept states to new end state
         for (State acceptState : first.getAcceptingStates()) {
             nfa.addEpsilonTransition(acceptState, end);
         }
@@ -436,7 +413,6 @@ public class RegexToNFAConverter {
             nfa.addEpsilonTransition(acceptState, end);
         }
         
-        // Merge all transitions
         nfa.addAllTransitions(first);
         nfa.addAllTransitions(second);
         
@@ -447,17 +423,14 @@ public class RegexToNFAConverter {
         NFA nfa = new NFA();
         nfa.setStartState(first.getStartState());
         
-        // Connect first's accept states to second's start state
         for (State acceptState : first.getAcceptingStates()) {
             nfa.addEpsilonTransition(acceptState, second.getStartState());
         }
         
-        // Set second's accept states as the new accept states
         for (State acceptState : second.getAcceptingStates()) {
             nfa.addAcceptingState(acceptState);
         }
         
-        // Merge all transitions
         nfa.addAllTransitions(first);
         nfa.addAllTransitions(second);
         
@@ -472,8 +445,7 @@ public class RegexToNFAConverter {
         result.setStartState(start);
         result.addAcceptingState(end);
         
-        // Add epsilon transitions
-        result.addEpsilonTransition(start, end); // for zero occurrences
+        result.addEpsilonTransition(start, end);
         result.addEpsilonTransition(start, nfa.getStartState());
         
         for (State acceptState : nfa.getAcceptingStates()) {
@@ -522,4 +494,5 @@ public class RegexToNFAConverter {
         result.addAllTransitions(nfa);
         return result;
     }
+
 }

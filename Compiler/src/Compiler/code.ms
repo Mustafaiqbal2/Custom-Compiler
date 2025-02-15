@@ -4,5 +4,6 @@ global integer max = 100
    describing the main function */
 function main() {
     decimal pi = 3.14159
-
+    pi = 3 + 4
+	pi = 3 * 4
 }
