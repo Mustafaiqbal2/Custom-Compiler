@@ -52,6 +52,7 @@ public class NFA {
         }
     }
     public NFA() {
+        this.startState = null; // Explicitly initialize to null
         this.acceptingStates = new HashSet<>();
         this.allStates = new HashSet<>();
         this.alphabet = new HashSet<>();
@@ -98,7 +99,7 @@ public class NFA {
         DFA dfa = new DFA();
         Map<Set<State>, State> dfaStates = new HashMap<>();
         Queue<Set<State>> unprocessed = new LinkedList<>();
-        AtomicInteger stateCounter = new AtomicInteger(1); // Using AtomicInteger instead
+        AtomicInteger stateCounter = new AtomicInteger(1); // Using AtomicInteger for unique state IDs
 
         // Get initial epsilon closure
         Set<State> initialSet = epsilonClosure(Set.of(startState));
@@ -107,8 +108,8 @@ public class NFA {
         unprocessed.add(initialSet);
         dfa.setStartState(dfaStart);
 
-        // Only mark as accepting if all required states are reached
-        if (initialSet.containsAll(acceptingStates)) {
+        // Mark as accepting if any NFA state in initialSet is accepting.
+        if (isAnyAccepting(initialSet)) {
             dfa.addAcceptingState(dfaStart);
         }
 
@@ -116,29 +117,37 @@ public class NFA {
             Set<State> currentSet = unprocessed.poll();
             State currentDFAState = dfaStates.get(currentSet);
 
-            // For each input symbol
+            // For each input symbol in the NFA's alphabet
             for (char symbol : alphabet) {
-                // Get next state set including epsilon closure
                 Set<State> nextStateSet = epsilonClosure(move(currentSet, symbol));
 
                 if (!nextStateSet.isEmpty()) {
-                    // Create or get existing DFA state using AtomicInteger
+                    // Create or get the existing DFA state
                     State nextDFAState = dfaStates.computeIfAbsent(nextStateSet, k -> {
                         State newState = new State("d" + stateCounter.getAndIncrement());
-                        if (isAcceptingStateSet(nextStateSet)) {
+                        if (isAnyAccepting(nextStateSet)) {
                             dfa.addAcceptingState(newState);
                         }
                         unprocessed.add(nextStateSet);
                         return newState;
                     });
 
-                    // Add transition in DFA
+                    // Add transition in the DFA.
                     dfa.addTransition(currentDFAState, symbol, nextDFAState);
                 }
             }
         }
 
         return dfa;
+    }
+
+    private boolean isAnyAccepting(Set<State> states) {
+        for (State s : states) {
+            if (s.isAccepting()) {
+                return true;
+            }
+        }
+        return false;
     }
     
     private boolean isAcceptingStateSet(Set<State> states) {
@@ -174,5 +183,5 @@ public class NFA {
             result.addAll(state.getTransitions(symbol));
         }
         return result;
-	}
+    }
 }
