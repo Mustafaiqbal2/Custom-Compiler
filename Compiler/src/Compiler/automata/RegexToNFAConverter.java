@@ -283,18 +283,38 @@ public class RegexToNFAConverter {
     private NFA createDecimalLiteralNFA(String decimal) {
         NFA nfa = new NFA();
         State start = createNewState();
+        State beforeDecimal = createNewState();
+        State decimalPoint = createNewState();
+        State afterDecimal = createNewState();
         State end = createNewState();
+        
         nfa.setStartState(start);
         nfa.addAcceptingState(end);
-
-        State current = start;
-        for (int i = 0; i < decimal.length(); i++) {
-            State next = (i == decimal.length() - 1) ? end : createNewState();
-            nfa.addTransition(current, decimal.charAt(i), next);
-            current = next;
+        
+        // Handle digits before decimal point
+        for (char digit = '0'; digit <= '9'; digit++) {
+            nfa.addTransition(start, digit, beforeDecimal);
+            nfa.addTransition(beforeDecimal, digit, beforeDecimal);
         }
+        
+        // Handle decimal point
+        nfa.addTransition(beforeDecimal, '.', decimalPoint);
+        nfa.addTransition(start, '.', decimalPoint);  // For numbers starting with decimal
+        
+        // Handle digits after decimal point
+        for (char digit = '0'; digit <= '9'; digit++) {
+            nfa.addTransition(decimalPoint, digit, afterDecimal);
+            nfa.addTransition(afterDecimal, digit, afterDecimal);
+        }
+        
+        // Set accepting states for different valid decimal formats
+        nfa.addAcceptingState(afterDecimal);  // For numbers like "1.23"
+        nfa.addAcceptingState(decimalPoint);   // For numbers like "1."
+        
         return nfa;
     }
+
+    
 
     private NFA createCharacterLiteralNFA(String charLiteral) {
         NFA nfa = new NFA();

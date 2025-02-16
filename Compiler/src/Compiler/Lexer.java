@@ -41,13 +41,6 @@ public class Lexer {
         REGEX_PATTERNS.put("BOOLEAN", "boolean[^A-Za-z0-9_]");
         REGEX_PATTERNS.put("CHARACTER", "character[^A-Za-z0-9_]");
         
-        // Literals
-     // In your lexer where patterns are defined
-        REGEX_PATTERNS.put("DECIMAL_LITERAL", "([0-9]+(\\.[0-9]+))"); // Changed from ([0-9]+\\.[0-9]+)
-        REGEX_PATTERNS.put("CHARACTER_LITERAL", "('[^']*')");
-        REGEX_PATTERNS.put("INTEGER_LITERAL", "[0-9]+");
-        REGEX_PATTERNS.put("BOOLEAN_LITERAL", "true[^A-Za-z0-9_]|false[^A-Za-z0-9_]");
-        
         // Operators
         REGEX_PATTERNS.put("MULTIPLY", "\\*");
         REGEX_PATTERNS.put("PLUS", "\\+");
@@ -57,6 +50,14 @@ public class Lexer {
         REGEX_PATTERNS.put("EXPONENT", "\\^");
         REGEX_PATTERNS.put("ASSIGN", "=");
         
+        
+        // Literals
+     // In your lexer where patterns are defined
+        REGEX_PATTERNS.put("DECIMAL_LITERAL", "[0-9]+\\.[0-9]+|[0-9]+\\.|\\.[0-9]+");
+        REGEX_PATTERNS.put("INTEGER_LITERAL", "[0-9]+");
+        REGEX_PATTERNS.put("BOOLEAN_LITERAL", "true[^A-Za-z0-9_]|false[^A-Za-z0-9_]");
+        
+       
         // Delimiters
         REGEX_PATTERNS.put("LPAREN", "\\(");
         REGEX_PATTERNS.put("RPAREN", "\\)");
@@ -137,6 +138,15 @@ public class Lexer {
                         }
                     }
                 } else {
+                	// Try to recognize decimal literal first
+                    Token decimalToken = recognizeDecimalLiteral(input, currentPosition, lineNumber, columnNumber);
+                    if (decimalToken != null) {
+                        tokens.add(decimalToken);
+                        String value = decimalToken.getValue();
+                        currentPosition += value.length();
+                        columnNumber += value.length();
+                        continue;
+                    }
                     Token token = createToken(tokenType, matchedValue);
                     if (token != null) {
                         tokens.add(token);
@@ -322,7 +332,56 @@ public class Lexer {
         }
     }
 
-
+    private Token recognizeDecimalLiteral(String input, int position, int lineNumber, int columnNumber) {
+        StringBuilder number = new StringBuilder();
+        int currentPos = position;
+        boolean hasDecimalPoint = false;
+        int length = input.length();
+        
+        // Case 1: Start with digits
+        while (currentPos < length && Character.isDigit(input.charAt(currentPos))) {
+            number.append(input.charAt(currentPos));
+            currentPos++;
+        }
+        
+        // Look for decimal point
+        if (currentPos < length && input.charAt(currentPos) == '.') {
+            hasDecimalPoint = true;
+            number.append('.');
+            currentPos++;
+            
+            // Read digits after decimal point
+            while (currentPos < length && Character.isDigit(input.charAt(currentPos))) {
+                number.append(input.charAt(currentPos));
+                currentPos++;
+            }
+        }
+        
+        // Case 2: Start with decimal point
+        if (position < length && input.charAt(position) == '.') {
+            hasDecimalPoint = true;
+            number.append('.');
+            currentPos = position + 1;
+            
+            // Must have at least one digit after decimal point
+            if (currentPos < length && Character.isDigit(input.charAt(currentPos))) {
+                while (currentPos < length && Character.isDigit(input.charAt(currentPos))) {
+                    number.append(input.charAt(currentPos));
+                    currentPos++;
+                }
+            } else {
+                return null; // Invalid decimal format
+            }
+        }
+        
+        // Check if we found a valid decimal number
+        if (hasDecimalPoint && number.length() > 1) {
+            String value = number.toString();
+            return new Token(TokenType.DECIMAL_LITERAL, value, lineNumber, columnNumber);
+        }
+        
+        return null;
+    }
     public int getCurrentScope() {
         return symbolTable.getCurrentScope();
     }

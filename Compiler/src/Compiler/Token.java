@@ -16,6 +16,10 @@ public class Token {
     public Token(String type, String value, int lineNumber) {
         this(TokenType.valueOf(type), value, lineNumber, 0);
     }
+
+	public String getValue() {
+		return value;
+	}
     
     @Override
     public String toString() {
