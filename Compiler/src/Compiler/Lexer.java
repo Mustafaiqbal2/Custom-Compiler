@@ -56,8 +56,7 @@ public class Lexer {
         REGEX_PATTERNS.put("DECIMAL_LITERAL", "[0-9]+\\.[0-9]+|[0-9]+\\.|\\.[0-9]+");
         REGEX_PATTERNS.put("INTEGER_LITERAL", "[0-9]+");
         REGEX_PATTERNS.put("BOOLEAN_LITERAL", "true[^A-Za-z0-9_]|false[^A-Za-z0-9_]");
-        
-       
+        REGEX_PATTERNS.put("CHARACTER_LITERAL", "'([^'\\\\]|\\\\[ntr'\"\\\\])'");       
         // Delimiters
         REGEX_PATTERNS.put("LPAREN", "\\(");
         REGEX_PATTERNS.put("RPAREN", "\\)");
@@ -88,8 +87,8 @@ public class Lexer {
         
         // Display Decimal Literal DFA
         System.out.println("DECIMAL_LITERAL DFA:");
-        System.out.println("Original Regex: " + REGEX_PATTERNS.get("DECIMAL_LITERAL"));
-        DFA decimalDFA = dfaPatterns.get("DECIMAL_LITERAL");
+        System.out.println("Original Regex: " + REGEX_PATTERNS.get("CHARACTER_LITERAL"));
+        DFA decimalDFA = dfaPatterns.get("CHARACTER_LITERAL");
         if (decimalDFA != null) {
             decimalDFA.displayDFA();
         }
@@ -311,6 +310,9 @@ public class Lexer {
             }
             case INTEGER_LITERAL, DECIMAL_LITERAL, BOOLEAN_LITERAL, CHARACTER_LITERAL -> {
                 if (pendingAssignment != null) {
+					if (token.type == TokenType.CHARACTER_LITERAL) {
+	                	System.out.println("Shgvdhgdvhedgvehgvehdvhvetting value for " + pendingAssignment + " to " + token.value); // Debug
+					}
                     symbolTable.setValue(pendingAssignment, token.value);
                     pendingAssignment = null;
                 }
