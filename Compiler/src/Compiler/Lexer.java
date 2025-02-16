@@ -142,6 +142,7 @@ public class Lexer {
                     Token decimalToken = recognizeDecimalLiteral(input, currentPosition, lineNumber, columnNumber);
                     if (decimalToken != null) {
                         tokens.add(decimalToken);
+                        updateSymbolTable(decimalToken);
                         String value = decimalToken.getValue();
                         currentPosition += value.length();
                         columnNumber += value.length();
