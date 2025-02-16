@@ -96,8 +96,6 @@ public class RegexToNFAConverter {
         Stack<Character> operators = new Stack<>();
         Map<Character, Integer> precedence = new HashMap<>();
         boolean inCharClass = false;
-        boolean escaped = false;
-        
         precedence.put('|', 1);
         precedence.put('#', 2);  // '#' is the concatenation operator now
         precedence.put('*', 3);
@@ -262,11 +260,6 @@ public class RegexToNFAConverter {
         }
 
         return stack.pop();
-    }
-
-    // Helper method
-    private boolean isDigit(char c) {
-        return c >= '0' && c <= '9';
     }
 
     private boolean isLiteralStart(char c) {
