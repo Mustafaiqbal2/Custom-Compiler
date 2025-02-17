@@ -138,12 +138,9 @@ public class SymbolTable {
                     }
                     break;
                 case "character":
-                    if (value instanceof String) {
-                        String str = (String) value;
-                        if (str.length() != 3 || str.charAt(0) != '\'' || str.charAt(2) != '\'') {
-                            return "Invalid character literal: " + value;
-                        }
-                    }
+					if (value instanceof String && ((String) value).length() != 1) {
+						return "Invalid character value: " + value;
+					}
                     break;
                 case "function":
                     return null; // Functions don't have values

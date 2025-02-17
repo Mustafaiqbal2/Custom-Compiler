@@ -2,6 +2,9 @@ package Compiler.automata;
 
 import java.util.*;
 
+
+
+
 public class RegexToNFAConverter {
     private int stateCounter = 0;
 
@@ -191,6 +194,11 @@ public class RegexToNFAConverter {
             System.out.println("Creating * NFA");
             return createBasicNFA('*');
         }
+        if (postfix.equals("'[^'\\\\]\\\\[ntrfb'\"\\\\]|\\\\[0-7]{1,3}|\\\\u[0-9a-fA-F]{4}|'#")) {
+            return createCharacterLiteralNFA();
+        }
+        
+        
 
         for (int i = 0; i < postfix.length(); i++) {
             char c = postfix.charAt(i);
@@ -261,6 +269,11 @@ public class RegexToNFAConverter {
 
         return stack.pop();
     }
+    
+
+    private boolean isWordChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '_';
+    }
 
     private boolean isLiteralStart(char c) {
         return c == '\'' || Character.isDigit(c);
@@ -272,12 +285,10 @@ public class RegexToNFAConverter {
     }
 
     private NFA createLiteralNFA(String literal) {
-        if (literal.startsWith("'")) {
-            return createCharacterLiteralNFA(literal);
-        } else if (literal.contains(".") ) {
+        if (literal.contains(".") ) {
             return createDecimalLiteralNFA(literal);
         }
-        return null;
+        return null; // This could cause issues with other literals
     }
 
     private NFA createDecimalLiteralNFA(String decimal) {
@@ -316,22 +327,76 @@ public class RegexToNFAConverter {
 
     
 
-    private NFA createCharacterLiteralNFA(String charLiteral) {
+    private NFA createCharacterLiteralNFA() {
         NFA nfa = new NFA();
+        
+        // Create states
         State start = createNewState();
+        State afterFirstQuote = createNewState();
+        State afterBackslash = createNewState();
+        State afterChar = createNewState();
         State end = createNewState();
+        
+        // States for octal sequences
+        State afterFirstOctal = createNewState();
+        State afterSecondOctal = createNewState();
+        
+        // States for unicode sequence
+        State afterU = createNewState();
+        State afterHex1 = createNewState();
+        State afterHex2 = createNewState();
+        State afterHex3 = createNewState();
+        State afterHex4 = createNewState();
+        
         nfa.setStartState(start);
         nfa.addAcceptingState(end);
 
-        State current = start;
-        for (int i = 0; i < charLiteral.length(); i++) {
-            State next = (i == charLiteral.length() - 1) ? end : createNewState();
-            nfa.addTransition(current, charLiteral.charAt(i), next);
-            current = next;
+        // First quote transition
+        nfa.addTransition(start, '\'', afterFirstQuote);
+        
+        // Add transitions for all printable ASCII characters (except ' and \)
+        for (char c = 32; c <= 126; c++) {
+            if (c != '\'' && c != '\\') {
+                nfa.addTransition(afterFirstQuote, c, afterChar);
+            }
         }
+        
+        // Backslash transition for escape sequences
+        nfa.addTransition(afterFirstQuote, '\\', afterBackslash);
+        
+        // Simple escape sequences
+        char[] escapeChars = {'n', 't', 'r', 'f', 'b', '\'', '\"', '\\'};
+        for (char c : escapeChars) {
+            nfa.addTransition(afterBackslash, c, afterChar);
+        }
+        
+        // Octal escape sequences (1-3 digits)
+        for (char c = '0'; c <= '7'; c++) {
+            nfa.addTransition(afterBackslash, c, afterFirstOctal);
+            nfa.addTransition(afterFirstOctal, c, afterSecondOctal);
+            nfa.addTransition(afterSecondOctal, c, afterChar);
+            // Allow shorter octal sequences
+            nfa.addTransition(afterFirstOctal, '\'', end);
+            nfa.addTransition(afterSecondOctal, '\'', end);
+        }
+        
+        // Unicode escape sequences
+        nfa.addTransition(afterBackslash, 'u', afterU);
+        
+        // Add transitions for hex digits (0-9, a-f, A-F)
+        char[] hexChars = "0123456789abcdefABCDEF".toCharArray();
+        for (char hexDigit : hexChars) {
+            nfa.addTransition(afterU, hexDigit, afterHex1);
+            nfa.addTransition(afterHex1, hexDigit, afterHex2);
+            nfa.addTransition(afterHex2, hexDigit, afterHex3);
+            nfa.addTransition(afterHex3, hexDigit, afterChar);
+        }
+        
+        // Closing quote transition from character state
+        nfa.addTransition(afterChar, '\'', end);
+
         return nfa;
     }
-
     private State createNewState() {
         return new State("s" + stateCounter++);
     }
@@ -507,5 +572,5 @@ public class RegexToNFAConverter {
         result.addAllTransitions(nfa);
         return result;
     }
-
 }
+

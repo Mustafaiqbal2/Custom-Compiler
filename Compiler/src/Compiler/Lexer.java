@@ -56,7 +56,7 @@ public class Lexer {
         REGEX_PATTERNS.put("DECIMAL_LITERAL", "[0-9]+\\.[0-9]+|[0-9]+\\.|\\.[0-9]+");
         REGEX_PATTERNS.put("INTEGER_LITERAL", "[0-9]+");
         REGEX_PATTERNS.put("BOOLEAN_LITERAL", "true[^A-Za-z0-9_]|false[^A-Za-z0-9_]");
-        REGEX_PATTERNS.put("CHARACTER_LITERAL", "'([^'\\\\]|\\\\[ntr'\"\\\\])'");       
+        REGEX_PATTERNS.put("CHARACTER_LITERAL", "'([^'\\\\]|\\\\[ntrfb'\"\\\\]|\\\\[0-7]{1,3}|\\\\u[0-9a-fA-F]{4})'");
         // Delimiters
         REGEX_PATTERNS.put("LPAREN", "\\(");
         REGEX_PATTERNS.put("RPAREN", "\\)");
@@ -85,13 +85,22 @@ public class Lexer {
     private void displayProblemPatternDFAs() {
         System.out.println("\n=== DFA Structures for Problem Patterns ===\n");
         
-        // Display Decimal Literal DFA
-        System.out.println("DECIMAL_LITERAL DFA:");
-        System.out.println("Original Regex: " + REGEX_PATTERNS.get("CHARACTER_LITERAL"));
-        DFA decimalDFA = dfaPatterns.get("CHARACTER_LITERAL");
-        if (decimalDFA != null) {
-            decimalDFA.displayDFA();
-        }
+        // display all the DFAs
+		/*for (Map.Entry<String, DFA> entry : dfaPatterns.entrySet()) {
+			String patternType = entry.getKey();
+			DFA dfa = entry.getValue();
+			if (dfa != null) {
+				System.out.println(patternType + " DFA:");
+				dfa.displayDFA();
+			}
+		}*/
+        DFA dfa = dfaPatterns.get("INTEGER");
+		if (dfa != null) {
+			System.out.println("Integer DFA:");
+			dfa.displayDFA();
+		}
+       
+        
     }
     private void convertRegexToDFA() {
         RegexToNFAConverter converter = new RegexToNFAConverter();
@@ -312,6 +321,7 @@ public class Lexer {
                 if (pendingAssignment != null) {
 					if (token.type == TokenType.CHARACTER_LITERAL) {
 	                	System.out.println("Shgvdhgdvhedgvehgvehdvhvetting value for " + pendingAssignment + " to " + token.value); // Debug
+	                	
 					}
                     symbolTable.setValue(pendingAssignment, token.value);
                     pendingAssignment = null;
