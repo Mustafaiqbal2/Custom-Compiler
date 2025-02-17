@@ -94,7 +94,7 @@ public class Lexer {
 				dfa.displayDFA();
 			}
 		}*/
-        DFA dfa = dfaPatterns.get("INTEGER");
+        DFA dfa = dfaPatterns.get("IDENTIFIER");
 		if (dfa != null) {
 			System.out.println("Integer DFA:");
 			dfa.displayDFA();
@@ -128,6 +128,7 @@ public class Lexer {
         while (currentPosition < input.length()) {
             String remaining = input.substring(currentPosition);
             TokenMatch match = findLongestMatch(remaining);
+           
 
             if (match != null) {
                 String matchedValue = match.value();
@@ -208,7 +209,7 @@ public class Lexer {
     }
     
     
-    private TokenMatch findLongestMatch(String input) {
+    private TokenMatch findLongestMatchh(String input) {
         TokenMatch longestMatch = null;
         int maxLength = 0;
 
@@ -261,7 +262,63 @@ public class Lexer {
             }
         }
         
+        if(longestMatch != null) 
+        	System.out.println("Longest match: " + longestMatch.type() + longestMatch.value()); // Debug
         return longestMatch;
+    }
+    
+    private TokenMatch findLongestMatch(String input) {
+        TokenMatch longestMatch = null;
+        int maxLength = 0;
+        
+        // Handle comments first
+        if (input.startsWith("//")) {
+            int endIdx = input.indexOf('\n');
+            if (endIdx == -1) endIdx = input.length();
+            return new TokenMatch("SINGLE_LINE_COMMENT", input.substring(0, endIdx));
+        }
+        
+        if (input.startsWith("/*")) {
+            int endIdx = input.indexOf("*/");
+            if (endIdx != -1) {
+                return new TokenMatch("MULTI_LINE_COMMENT", input.substring(0, endIdx + 2));
+            }
+        }
+
+        // Try each pattern in order of definition (LinkedHashMap preserves order)
+        for (Map.Entry<String, DFA> entry : dfaPatterns.entrySet()) {
+            String patternType = entry.getKey();
+            DFA dfa = entry.getValue();
+            
+            if (dfa == null) continue;
+            
+            int length = findLongestAcceptingPrefix(dfa, input);
+            
+            // Only update if this match is longer or it's equal length but higher priority
+            if (length > maxLength || 
+                (length == maxLength && longestMatch != null && 
+                 shouldPreferPattern(patternType, longestMatch.type()))) {
+                maxLength = length;
+                longestMatch = new TokenMatch(patternType, input.substring(0, length));
+            }
+        }
+        
+        return longestMatch;
+    }
+
+    private boolean shouldPreferPattern(String newPattern, String currentPattern) {
+        // Keywords should be preferred over IDENTIFIER
+        if (currentPattern.equals("IDENTIFIER") && isKeywordPattern(newPattern)) {
+            return true;
+        }
+        return false;
+    }
+
+    private boolean isKeywordPattern(String pattern) {
+        return pattern.equals("INTEGER") || pattern.equals("DECIMAL") || 
+               pattern.equals("BOOLEAN") || pattern.equals("CHARACTER") ||
+               pattern.equals("GLOBAL") || pattern.equals("FUNCTION") || 
+               pattern.equals("VAR");
     }
 
     private int findLongestAcceptingPrefix(DFA dfa, String input) {

@@ -197,6 +197,9 @@ public class RegexToNFAConverter {
         if (postfix.equals("'[^'\\\\]\\\\[ntrfb'\"\\\\]|\\\\[0-7]{1,3}|\\\\u[0-9a-fA-F]{4}|'#")) {
             return createCharacterLiteralNFA();
         }
+        if (postfix.equals("in#t#e#g#e#r#[^A-Za-z0-9_]#")){
+        	return createKeywordNFA("integer");   // makes the correct dfa for the keyword integer
+        }
         
         
 
@@ -262,6 +265,9 @@ public class RegexToNFAConverter {
                 stack.push(createBasicNFA(c));
             }
         }
+        
+        
+		
 
         if (stack.isEmpty()) {
             throw new IllegalArgumentException("Invalid regex expression");
@@ -270,6 +276,21 @@ public class RegexToNFAConverter {
         return stack.pop();
     }
     
+    private NFA createKeywordNFA(String keyword) {
+        NFA nfa = new NFA();
+        State current = createNewState();
+        nfa.setStartState(current);
+        
+        // Create a linear chain of states for the keyword
+        for (char c : keyword.toCharArray()) {
+            State next = createNewState();
+            nfa.addTransition(current, c, next);
+            current = next;
+        }
+        
+        nfa.addAcceptingState(current);
+        return nfa;
+    }
 
     private boolean isWordChar(char c) {
         return Character.isLetterOrDigit(c) || c == '_';
@@ -402,6 +423,7 @@ public class RegexToNFAConverter {
     }
 
     private NFA createBasicNFA(char c) {
+    	System.out.println("Creating basic NFA for: " + c);
         NFA nfa = new NFA();
         State start = createNewState();
         State end = createNewState();

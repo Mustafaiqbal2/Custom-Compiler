@@ -175,4 +175,5 @@ public class NFA {
         }
         return result;
     }
+
 }
