@@ -60,7 +60,10 @@ src/
 │   │── DFA.java             # DFA implementation
 │   │── State.java           # Small class for state
 │   │── SymbolTable.java     # Symbol table implementation
+|   |── Main.java
+|   |── RegexToNFA           # Class for implementation of Thompson's Construction
 │   └── ErrorHandler.java    # Error handling and reporting
+|   
 ```
 
 ## Getting Started
@@ -78,7 +81,7 @@ git clone https://github.com/Mustafaiqbal2/Compiler-Phase-1-2.git
 
 3. Run the compiler:
 ```bash
-java -cp bin Compiler.Main <your_file.ccl>
+java -cp bin Compiler.Main
 ```
 
 ## Current Implementation Status
