@@ -1,7 +1,7 @@
 package Compiler;
 
 import java.util.*;
-
+/////////
 public class RegexToNFA {
     private int stateCount = 0;
     //////

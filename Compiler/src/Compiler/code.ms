@@ -3,7 +3,7 @@ global float pi = 3.14159
 global boolean flag = true  
 global char letter = 'a'  
 global string greeting = "hello, world"
-
+/////////
 /* This is a test of
    multiline comments
    with multiple lines

@@ -1,7 +1,7 @@
 package Compiler;
 
 import java.util.*;
-
+/////////
 public class SymbolTable {
     public static class SymbolEntry {
         public String identifierName;

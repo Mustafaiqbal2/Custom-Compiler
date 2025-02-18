@@ -1,7 +1,7 @@
 package Compiler;
 
 import java.util.*;
-
+/////////
 public class NFA {
     public State startState;
     public State acceptState;

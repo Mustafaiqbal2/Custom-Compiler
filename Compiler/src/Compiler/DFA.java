@@ -3,6 +3,7 @@ package Compiler;
 import java.util.*;
 
 public class DFA {
+	///////
     private DFANode startNode;
     private Set<DFANode> allNodes;
     

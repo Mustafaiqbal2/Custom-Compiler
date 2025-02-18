@@ -1,5 +1,5 @@
 package Compiler;
-
+/////////
 public enum TokenType {
     KEYWORD,
     IDENTIFIER,

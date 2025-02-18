@@ -3,6 +3,8 @@ package Compiler;
 import java.util.*;
 
 public class Lexer {
+/////////
+////////////
     private String input;
     private List<Token> tokens;
     private SymbolTable symbolTable;
