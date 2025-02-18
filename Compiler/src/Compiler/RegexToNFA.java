@@ -206,10 +206,7 @@ public class RegexToNFA {
                     char ch = content.charAt(i);
                     start.addTransition(ch, accept);
                 }
-              //add transition for newline
-                start.addTransition('\n', accept);
-                start.addTransition('\r', accept);
-                start.addTransition('\t', accept);
+              
             }
             return new NFA(start, accept);
         }
