@@ -1,177 +1,140 @@
-package Compiler.automata;
+package Compiler;
 
 import java.util.*;
 
 public class DFA {
-    private State startState;
-    private Set<State> acceptingStates;
-    private Set<State> allStates;
-    private Set<Character> alphabet;
-    private Map<State, Map<Character, State>> transitions;
-
-    public DFA() {
-        this.acceptingStates = new HashSet<>();
-        this.allStates = new HashSet<>();
-        this.alphabet = new HashSet<>();
-        this.transitions = new HashMap<>();
+    private DFANode startNode;
+    private Set<DFANode> allNodes;
+    
+    // Construct DFA by converting from the provided NFA.
+    public DFA(NFA nfa) {
+        convertNfaToDfa(nfa);
     }
-
-    public void setStartState(State state) {
-        this.startState = state;
-        allStates.add(state);
-        transitions.putIfAbsent(state, new HashMap<>());
-    }
-
-    public void addAcceptingState(State state) {
-        state.setAccepting(true);
-        acceptingStates.add(state);
-        allStates.add(state);
-        transitions.putIfAbsent(state, new HashMap<>());
-    }
-
-    public void addTransition(State from, char symbol, State to) {
-        alphabet.add(symbol);
-        allStates.add(from);
-        allStates.add(to);
+    
+    private void convertNfaToDfa(NFA nfa) {
+        Map<Set<NFA.State>, DFANode> dfaStates = new HashMap<>();
+        allNodes = new HashSet<>();
+        Set<NFA.State> startSet = epsilonClosure(Collections.singleton(nfa.startState));
+        DFANode startDfa = new DFANode(startSet, startSet.contains(nfa.acceptState));
+        startNode = startDfa;
+        dfaStates.put(startSet, startDfa);
+        allNodes.add(startDfa);
         
-        transitions.putIfAbsent(from, new HashMap<>());
-        transitions.putIfAbsent(to, new HashMap<>());
-        transitions.get(from).put(symbol, to);
-    }
-
-    public boolean accepts(String input) {
-        if (startState == null) return false;
+        Queue<DFANode> queue = new LinkedList<>();
+        queue.add(startDfa);
         
-        State currentState = startState;
-        for (char c : input.toCharArray()) {
-            if (!alphabet.contains(c) || !transitions.containsKey(currentState)) {
-                return false;
+        while (!queue.isEmpty()) {
+            DFANode current = queue.poll();
+            Map<Character, Set<NFA.State>> transitions = new HashMap<>();
+            for (NFA.State state : current.nfaStates) {
+                for (Map.Entry<Character, List<NFA.State>> entry : state.transitions.entrySet()) {
+                    char symbol = entry.getKey();
+                    for (NFA.State next : entry.getValue()) {
+                        transitions.computeIfAbsent(symbol, k -> new HashSet<>())
+                                   .addAll(epsilonClosure(Collections.singleton(next)));
+                    }
+                }
             }
-            
-            Map<Character, State> stateTransitions = transitions.get(currentState);
-            if (!stateTransitions.containsKey(c)) {
-                return false;
+            for (Map.Entry<Character, Set<NFA.State>> entry : transitions.entrySet()) {
+                char symbol = entry.getKey();
+                Set<NFA.State> targetSet = entry.getValue();
+                DFANode targetDfa = dfaStates.get(targetSet);
+                if (targetDfa == null) {
+                    targetDfa = new DFANode(targetSet, targetSet.contains(nfa.acceptState));
+                    dfaStates.put(targetSet, targetDfa);
+                    queue.add(targetDfa);
+                    allNodes.add(targetDfa);
+                }
+                current.transitions.put(symbol, targetDfa);
             }
-            
-            currentState = stateTransitions.get(c);
         }
-        
-        return acceptingStates.contains(currentState);
     }
-
+    
+    // Computes the epsilon-closure of a set of NFA states.
+    private Set<NFA.State> epsilonClosure(Set<NFA.State> states) {
+        Set<NFA.State> closure = new HashSet<>(states);
+        Stack<NFA.State> stack = new Stack<>();
+        stack.addAll(states);
+        while (!stack.isEmpty()) {
+            NFA.State state = stack.pop();
+            for (NFA.State next : state.epsilonTransitions) {
+                if (!closure.contains(next)) {
+                    closure.add(next);
+                    stack.push(next);
+                }
+            }
+        }
+        return closure;
+    }
+    
+    // Matches the longest prefix of the input string that the DFA accepts.
+    public String match(String input) {
+        DFANode current = startNode;
+        int lastAcceptIndex = -1;
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+            if (current.transitions.containsKey(c)) {
+                current = current.transitions.get(c);
+                if (current.isAccept) {
+                    lastAcceptIndex = i;
+                }
+            } else {
+                break;
+            }
+        }
+        if (lastAcceptIndex != -1) {
+            return input.substring(0, lastAcceptIndex + 1);
+        }
+        return null;
+    }
+    
+    // Displays the DFA transition table.
     public void displayTransitionTable() {
+        // Build a mapping from each DFA state to a sequential id.
+        Map<DFANode, Integer> stateIdMap = new HashMap<>();
+        int id = 0;
+        for (DFANode node : allNodes) { // Assume allNodes is a collection of all DFA states
+            stateIdMap.put(node, id++);
+        }
+        
+        // Print header for the table.
         System.out.println("DFA Transition Table:");
-        System.out.printf("%-10s|", "State");
+        System.out.println("---------------------------------------------------------------");
+        System.out.printf("| %-8s | %-40s |\n", "State", "Transitions (char -> state)");
+        System.out.println("---------------------------------------------------------------");
         
-        List<Character> sortedAlphabet = new ArrayList<>(alphabet);
-        Collections.sort(sortedAlphabet);
-        
-        for (char c : sortedAlphabet) {
-            System.out.printf(" %-15s|", c);
-        }
-        System.out.println("\n" + "-".repeat(10 + alphabet.size() * 16));
-
-        List<State> sortedStates = new ArrayList<>(allStates);
-        sortedStates.sort(Comparator.comparingInt(State::getId));
-
-        for (State state : sortedStates) {
-            System.out.printf("%-8s%s |", state.getId(), state.isAccepting() ? "*" : " ");
-            
-            for (char symbol : sortedAlphabet) {
-                State nextState = transitions.get(state).get(symbol);
-                String transStr = nextState == null ? "-" : String.valueOf(nextState.getId());
-                System.out.printf(" %-15s|", transStr);
+        // For each state, annotate start and accepting states.
+        for (DFANode node : allNodes) {
+            int stateId = stateIdMap.get(node);
+            String marker = "";
+            if (node == startNode) {
+                marker += "-"; // start state marker
             }
-            System.out.println();
-        }
-    }
- // In DFA.java
-    public void displayDFA() {
-        System.out.println("\nDFA Structure:");
-        System.out.println("Start State: " + startState.getId());
-        
-        // Display accepting states
-        System.out.print("Accepting States: ");
-        StringBuilder accepting = new StringBuilder();
-        for (State state : acceptingStates) {
-            accepting.append(state.getId()).append(", ");
-        }
-        if (accepting.length() > 0) {
-            accepting.setLength(accepting.length() - 2); // Remove last ", "
-        }
-        System.out.println(accepting);
-        
-        // Get all states and sort them for consistent display
-        List<State> sortedStates = new ArrayList<>(getAllStates());
-        Collections.sort(sortedStates, new Comparator<State>() {
-            @Override
-            public int compare(State s1, State s2) {
-                return Integer.compare(s1.getId(), s2.getId());
+            if (node.isAccept) {
+                marker += "+"; // accepting state marker
             }
-        });
-        
-        // Get all input symbols
-        Set<Character> symbols = new TreeSet<>();
-        for (State state : sortedStates) {
-            symbols.addAll(getTransitions(state).keySet());
-        }
-        
-        // Print transition table header
-        System.out.println("\nTransition Table:");
-        System.out.printf("%-10s|", "State");
-        for (char symbol : symbols) {
-            System.out.printf(" %-8s|", String.valueOf(symbol));
-        }
-        System.out.println();
-        
-        // Print separator line
-        StringBuilder separator = new StringBuilder();
-        for (int i = 0; i < 10 + symbols.size() * 9; i++) {
-            separator.append("-");
-        }
-        System.out.println(separator);
-        
-        // Print transitions for each state
-        for (State state : sortedStates) {
-            String stateStr = state.getId() + (acceptingStates.contains(state) ? "*" : " ");
-            System.out.printf("%-9s|", stateStr);
-            
-            Map<Character, State> stateTransitions = getTransitions(state);
-            for (char symbol : symbols) {
-                State target = stateTransitions.get(symbol);
-                System.out.printf(" %-8s|", target != null ? target.getId() : "-");
+            // Display the new ID with the marker appended.
+            String displayId = stateId + marker;
+            StringBuilder transStr = new StringBuilder();
+            for (Map.Entry<Character, DFANode> entry : node.transitions.entrySet()) {
+                int targetId = stateIdMap.get(entry.getValue());
+                transStr.append(entry.getKey()).append("->").append(targetId).append("  ");
             }
-            System.out.println();
+            System.out.printf("| %-8s | %-40s |\n", displayId, transStr.toString());
         }
-        System.out.println();
+        System.out.println("---------------------------------------------------------------");
     }
-
-    public State getStartState() {
-        return startState;
+    
+    // Inner class representing a node (state) in the DFA.
+    public static class DFANode {
+        public Set<NFA.State> nfaStates;
+        public boolean isAccept;
+        public Map<Character, DFANode> transitions;
+        
+        public DFANode(Set<NFA.State> nfaStates, boolean isAccept) {
+            this.nfaStates = nfaStates;
+            this.isAccept = isAccept;
+            this.transitions = new HashMap<>();
+        }
     }
-
-    public Set<State> getAcceptingStates() {
-        return Collections.unmodifiableSet(acceptingStates);
-    }
-
-    public Set<State> getAllStates() {
-        return Collections.unmodifiableSet(allStates);
-    }
-
-    public Set<Character> getAlphabet() {
-        return Collections.unmodifiableSet(alphabet);
-    }
-
-    public Map<Character, State> getTransitions(State state) {
-        return transitions.containsKey(state) ? 
-               Collections.unmodifiableMap(transitions.get(state)) : 
-               Collections.emptyMap();
-    }
-
-	public boolean isAccepting(State currentState) {
-		if (acceptingStates.contains(currentState)) {
-			return true;
-		}
-		return false;
-	}
 }

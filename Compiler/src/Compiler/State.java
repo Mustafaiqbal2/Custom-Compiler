@@ -1,4 +1,4 @@
-package Compiler.automata;
+package Compiler;
 
 import java.util.*;
 

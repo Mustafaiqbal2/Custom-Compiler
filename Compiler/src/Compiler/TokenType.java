@@ -1,43 +1,19 @@
 package Compiler;
 
 public enum TokenType {
-    // Keywords
-    GLOBAL,
-    FUNCTION,
-    VAR,
+    KEYWORD,
+    IDENTIFIER,
     INTEGER,
     DECIMAL,
     BOOLEAN,
-    CHARACTER,
-    
-    // Literals
-    INTEGER_LITERAL,
-    DECIMAL_LITERAL,
-    BOOLEAN_LITERAL,
-    CHARACTER_LITERAL,
-    IDENTIFIER,
-    
-    // Operators
-    PLUS,
-    MINUS,
-    MULTIPLY,
-    DIVIDE,
-    MODULUS,
-    EXPONENT,
+    CHAR,
+    STRING,
+    OPERATOR,
+    SINGLE_COMMENT,
+    MULTI_COMMENT,
     ASSIGN,
-    
-    // Delimiters
     LPAREN,
     RPAREN,
     LBRACE,
-    RBRACE,
-    SEMICOLON,
-    
-    // Comments
-    SINGLE_LINE_COMMENT,
-    MULTI_LINE_COMMENT,
-    
-    // Special
-    UNKNOWN,
-    EOF, NEWLINE, WHITESPACE, MODULO
+    RBRACE
 }

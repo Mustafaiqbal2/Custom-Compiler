@@ -1,473 +1,200 @@
 package Compiler;
 
 import java.util.*;
-import Compiler.automata.*;
 
 public class Lexer {
     private String input;
     private List<Token> tokens;
-    private int lineNumber;
-    private int columnNumber;
-    private int currentPosition;
     private SymbolTable symbolTable;
     private ErrorHandler errorHandler;
-    private Map<String, NFA> nfaPatterns;
-    private Map<String, DFA> dfaPatterns;
-    private boolean isFunctionDeclaration = false;
-    private String lastIdentifier = null;
-    private boolean isDeclaration = false;
-    private String currentDeclType = null;
-    private boolean isNextGlobal = false;
- // Inside your Lexer class, add a new field:
-    private String pendingAssignment = null;
-
-    // Use a LinkedHashMap so that insertion order (priority) is preserved.
-    private static final Map<String, String> REGEX_PATTERNS;
-
-    static {
-        REGEX_PATTERNS = new LinkedHashMap<>();
-        
-        // Whitespace and comments (highest priority)
-        REGEX_PATTERNS.put("WHITESPACE", "[ \t\n]+");
-        REGEX_PATTERNS.put("MULTI_LINE_COMMENT", "/\\*([^*]|\\*+[^*/])*\\*+/");
-        REGEX_PATTERNS.put("SINGLE_LINE_COMMENT", "//[^\n]*");
-        
-        // Keywords must come before identifiers and must match exactly
-        REGEX_PATTERNS.put("GLOBAL", "global[^A-Za-z0-9_]");
-        REGEX_PATTERNS.put("FUNCTION", "function[^A-Za-z0-9_]");
-        REGEX_PATTERNS.put("VAR", "var[^A-Za-z0-9_]");
-        REGEX_PATTERNS.put("INTEGER", "integer[^A-Za-z0-9_]");
-        REGEX_PATTERNS.put("DECIMAL", "decimal[^A-Za-z0-9_]");
-        REGEX_PATTERNS.put("BOOLEAN", "boolean[^A-Za-z0-9_]");
-        REGEX_PATTERNS.put("CHARACTER", "character[^A-Za-z0-9_]");
-        
-        // Operators
-        REGEX_PATTERNS.put("MULTIPLY", "\\*");
-        REGEX_PATTERNS.put("PLUS", "\\+");
-        REGEX_PATTERNS.put("MINUS", "-");
-        REGEX_PATTERNS.put("DIVIDE", "/");
-        REGEX_PATTERNS.put("MODULO", "%");
-        REGEX_PATTERNS.put("EXPONENT", "\\^");
-        REGEX_PATTERNS.put("ASSIGN", "=");
-        
-        
-        // Literals
-     // In your lexer where patterns are defined
-        REGEX_PATTERNS.put("DECIMAL_LITERAL", "[0-9]+\\.[0-9]+|[0-9]+\\.|\\.[0-9]+");
-        REGEX_PATTERNS.put("INTEGER_LITERAL", "[0-9]+");
-        REGEX_PATTERNS.put("BOOLEAN_LITERAL", "true[^A-Za-z0-9_]|false[^A-Za-z0-9_]");
-        REGEX_PATTERNS.put("CHARACTER_LITERAL", "'([^'\\\\]|\\\\[ntrfb'\"\\\\]|\\\\[0-7]{1,3}|\\\\u[0-9a-fA-F]{4})'");
-        // Delimiters
-        REGEX_PATTERNS.put("LPAREN", "\\(");
-        REGEX_PATTERNS.put("RPAREN", "\\)");
-        REGEX_PATTERNS.put("LBRACE", "\\{");
-        REGEX_PATTERNS.put("RBRACE", "\\}");
-        REGEX_PATTERNS.put("SEMICOLON", ";");
-        
-        // Identifier must come last
-        REGEX_PATTERNS.put("IDENTIFIER", "[A-Za-z_][A-Za-z0-9_]*");
-    }
+    
+    // Map each token type to its corresponding DFA for pattern matching.
+    private Map<TokenType, DFA> tokenDFAs;
+    
+    // Fields for scope and declaration handling.
+    private String currentScope = "global";
+    private String pendingDataType = null;
+    private boolean expectingFunctionName = false;
+    
+    // Used for symbol table processing (lookahead).
+    private int tokenIndex = 0;
 
     public Lexer(String input) {
         this.input = input;
         this.tokens = new ArrayList<>();
-        this.lineNumber = 1;
-        this.columnNumber = 1;
-        this.currentPosition = 0;
+        this.symbolTable = new SymbolTable();
         this.errorHandler = new ErrorHandler();
-        this.symbolTable = new SymbolTable(errorHandler);
-        this.nfaPatterns = new HashMap<>();
-        this.dfaPatterns = new HashMap<>();
-        convertRegexToDFA();
-        displayProblemPatternDFAs(); // Debug
+        this.tokenDFAs = new LinkedHashMap<>();
+        initTokenDFAs();
     }
- // In Lexer.java, after convertRegexToDFA()
-    private void displayProblemPatternDFAs() {
-        System.out.println("\n=== DFA Structures for Problem Patterns ===\n");
+    
+    // Initializes DFAs for different token patterns.
+    // Initializes DFAs for different token patterns.
+    private void initTokenDFAs() {
+        // Regular expressions for tokens.
+        // Note: Regexes are simplified.
+    	// Comments
+    	String singleLineCommentRegex = "//.*";
+    	String multiLineCommentRegex = "/\\*(.|\\n)*\\*/";
+
+    	// Literals (using simpler patterns)
+    	String stringRegex   = "\".*\"";       // greedy matching for strings
+    	String charRegex     = "'.'";          // a single character between single quotes
+    	String booleanRegex  = "true|false";   // boolean literals
+
+    	// Numeric literals
+    	String decimalRegex  = "[0-9]+\\.[0-9]+"; // one or more digits, a dot, one or more digits
+    	String integerRegex  = "[0-9]+";
+
+    	// Punctuation and operators
+    	String assignRegex   = "=";
+    	String lparenRegex   = "\\(";
+    	String rparenRegex   = "\\)";
+    	String lbraceRegex   = "\\{";
+    	String rbraceRegex   = "\\}";
+    	String operatorRegex = "(\\+|\\-|\\*|/|%|<|>)";
+
+    	// Identifier (only lowercase letters per assignment)
+    	String identifierRegex = "[a-z]+";
         
-        // display all the DFAs
-		/*for (Map.Entry<String, DFA> entry : dfaPatterns.entrySet()) {
-			String patternType = entry.getKey();
-			DFA dfa = entry.getValue();
-			if (dfa != null) {
-				System.out.println(patternType + " DFA:");
-				dfa.displayDFA();
-			}
-		}*/
-        DFA dfa = dfaPatterns.get("IDENTIFIER");
-		if (dfa != null) {
-			System.out.println("Integer DFA:");
-			dfa.displayDFA();
-		}
-       
-        
-    }
-    private void convertRegexToDFA() {
-        RegexToNFAConverter converter = new RegexToNFAConverter();
-
-        for (Map.Entry<String, String> entry : REGEX_PATTERNS.entrySet()) {
-            try {
-                NFA nfa = converter.convert(entry.getValue());
-                nfaPatterns.put(entry.getKey(), nfa);
-                DFA dfa = nfa.toDFA();
-                dfaPatterns.put(entry.getKey(), dfa);
-            } catch (Exception e) {
-                errorHandler.reportError(0, 0, 
-                    "Failed to convert pattern " + entry.getKey() + ": " + e.getMessage(),
-                    ErrorHandler.ErrorType.INTERNAL);
-            }
-        }
-    }
-
-    public void tokenize() {
-        currentPosition = 0;
-        lineNumber = 1;
-        columnNumber = 1;
-        tokens.clear();
-
-        while (currentPosition < input.length()) {
-            String remaining = input.substring(currentPosition);
-            TokenMatch match = findLongestMatch(remaining);
-           
-
-            if (match != null) {
-                String matchedValue = match.value();
-                String tokenType = match.type();
-
-                // Skip whitespace and comments.
-                if (tokenType.equals("WHITESPACE") ||
-                    tokenType.equals("SINGLE_LINE_COMMENT") ||
-                    tokenType.equals("MULTI_LINE_COMMENT")) {
-                    for (char c : matchedValue.toCharArray()) {
-                        if (c == '\n') {
-                            lineNumber++;
-                            columnNumber = 1;
-                        } else {
-                            columnNumber++;
-                        }
-                    }
-                } else {
-                	// Try to recognize decimal literal first
-                    Token decimalToken = recognizeDecimalLiteral(input, currentPosition, lineNumber, columnNumber);
-                    if (decimalToken != null) {
-                        tokens.add(decimalToken);
-                        updateSymbolTable(decimalToken);
-                        String value = decimalToken.getValue();
-                        currentPosition += value.length();
-                        columnNumber += value.length();
-                        continue;
-                    }
-                    Token token = createToken(tokenType, matchedValue);
-                    if (token != null) {
-                        tokens.add(token);
-                        updateSymbolTable(token);
-                    }
-                    columnNumber += matchedValue.length();
-                }
-                currentPosition += matchedValue.length();
-            } else {
-                errorHandler.reportError(lineNumber, columnNumber,
-                    "Invalid token at position " + currentPosition,
-                    ErrorHandler.ErrorType.LEXICAL);
-                currentPosition++;
-                columnNumber++;
-            }
-        }
-        tokens.add(new Token(TokenType.EOF, "", lineNumber, columnNumber));
-    }
-
-    private Token createToken(String type, String value) {
+        // Create DFAs by converting regex -> NFA -> DFA.
+        RegexToNFA regexToNFA = new RegexToNFA();
         try {
-            // Handle special cases first
-            if (type.equals("INTEGER_LITERAL")) {
-                return new Token(TokenType.INTEGER_LITERAL, value, lineNumber, columnNumber);
-            }
-            if (type.equals("DECIMAL_LITERAL")) {
-                return new Token(TokenType.DECIMAL_LITERAL, value, lineNumber, columnNumber);
-            }
-            if (type.equals("CHARACTER_LITERAL")) {
-                // Strip quotes from character literals
-                String charValue = value;
-                if (value.length() >= 2 && value.startsWith("'") && value.endsWith("'")) {
-                    charValue = value.substring(1, value.length() - 1);
-                }
-                return new Token(TokenType.CHARACTER_LITERAL, charValue, lineNumber, columnNumber);
-            }
-            if (type.equals("BOOLEAN_LITERAL")) {
-                String trimmedValue = value.replaceAll("[^A-Za-z0-9_]$", "");
-                return new Token(TokenType.BOOLEAN_LITERAL, trimmedValue, lineNumber, columnNumber);
-            }
-
-            // Direct conversion for other types
-            return new Token(TokenType.valueOf(type), value, lineNumber, columnNumber);
-        } catch (IllegalArgumentException e) {
-            errorHandler.reportError(lineNumber, columnNumber,
-                "Invalid token type: " + type,
-                ErrorHandler.ErrorType.INTERNAL);
-            return null;
+        	// In Lexer.initTokenDFAs(), using a LinkedHashMap to preserve order
+        	tokenDFAs.put(TokenType.SINGLE_COMMENT, new DFA(regexToNFA.convert(singleLineCommentRegex)));
+        	tokenDFAs.put(TokenType.MULTI_COMMENT, new DFA(regexToNFA.convert(multiLineCommentRegex)));
+        	tokenDFAs.put(TokenType.STRING, new DFA(regexToNFA.convert(stringRegex)));
+        	tokenDFAs.put(TokenType.CHAR, new DFA(regexToNFA.convert(charRegex)));
+        	tokenDFAs.put(TokenType.BOOLEAN, new DFA(regexToNFA.convert(booleanRegex)));
+        	tokenDFAs.put(TokenType.DECIMAL, new DFA(regexToNFA.convert(decimalRegex)));
+        	tokenDFAs.put(TokenType.INTEGER, new DFA(regexToNFA.convert(integerRegex)));
+        	tokenDFAs.put(TokenType.ASSIGN, new DFA(regexToNFA.convert(assignRegex)));
+        	tokenDFAs.put(TokenType.LPAREN, new DFA(regexToNFA.convert(lparenRegex)));
+        	tokenDFAs.put(TokenType.RPAREN, new DFA(regexToNFA.convert(rparenRegex)));
+        	tokenDFAs.put(TokenType.LBRACE, new DFA(regexToNFA.convert(lbraceRegex)));
+        	tokenDFAs.put(TokenType.RBRACE, new DFA(regexToNFA.convert(rbraceRegex)));
+        	tokenDFAs.put(TokenType.OPERATOR, new DFA(regexToNFA.convert(operatorRegex)));
+        	tokenDFAs.put(TokenType.IDENTIFIER, new DFA(regexToNFA.convert(identifierRegex)));
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
     
-    
-    private TokenMatch findLongestMatchh(String input) {
-        TokenMatch longestMatch = null;
-        int maxLength = 0;
-
-        // Handle comments first
-        if (input.startsWith("//")) {
-            int endIdx = input.indexOf('\n');
-            if (endIdx == -1) endIdx = input.length();
-            return new TokenMatch("SINGLE_LINE_COMMENT", input.substring(0, endIdx));
-        }
-        
-        if (input.startsWith("/*")) {
-            int endIdx = input.indexOf("*/");
-            if (endIdx != -1) {
-                return new TokenMatch("MULTI_LINE_COMMENT", input.substring(0, endIdx + 2));
+    // Tokenizes the entire input, then processes tokens for the symbol table.
+    public void tokenize() {
+        int pos = 0;
+        int lineNumber = 1;
+        while (pos < input.length()) {
+            char c = input.charAt(pos);
+            // Update line counter for newline characters
+            if (Character.isWhitespace(c)) {
+                if (c == '\n') {
+                    lineNumber++;
+                }
+                pos++;
+                continue;
+            }
+            boolean matched = false;
+            // Try each token type (order matters)
+            for (Map.Entry<TokenType, DFA> entry : tokenDFAs.entrySet()) {
+                DFA dfa = entry.getValue();
+                String tokenValue = dfa.match(input.substring(pos));
+                if (tokenValue != null && !tokenValue.isEmpty()) {
+                    TokenType type = entry.getKey();
+                    if (type == TokenType.IDENTIFIER && isKeyword(tokenValue)) {
+                        type = TokenType.KEYWORD;
+                    }
+                    tokens.add(new Token(type, tokenValue, lineNumber));
+                    pos += tokenValue.length();
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) {
+                errorHandler.addError("Unrecognized token at line " + lineNumber + ", position " + pos);
+                pos++;
             }
         }
-
-        // Try each pattern in order of definition
-        for (Map.Entry<String, DFA> entry : dfaPatterns.entrySet()) {
-            String patternType = entry.getKey();
-            DFA dfa = entry.getValue();
-            
-            if (dfa == null) continue;
-            
-            int length = findLongestAcceptingPrefix(dfa, input);
-            if (length > maxLength) {
-                String matchedValue = input.substring(0, length);
-                
-                // Special handling for decimal literals to ensure they're not split
-                if (patternType.equals("DECIMAL_LITERAL")) {
-                    if (matchedValue.contains(".")) {
-                        maxLength = length;
-                        longestMatch = new TokenMatch(patternType, matchedValue);
-                        continue;
-                    }
-                }
-                
-                // Special handling for character literals to ensure they're not split
-                if (patternType.equals("CHARACTER_LITERAL")) {
-                    if (matchedValue.startsWith("'") && matchedValue.endsWith("'")) {
-                        maxLength = length;
-                        longestMatch = new TokenMatch(patternType, matchedValue);
-                        continue;
-                    }
-                }
-                
-                // Handle all other cases
-                maxLength = length;
-                longestMatch = new TokenMatch(patternType, matchedValue);
-            }
+        // Process the token stream for symbol table entries
+        for (tokenIndex = 0; tokenIndex < tokens.size(); tokenIndex++) {
+            processTokenForSymbolTable(tokens.get(tokenIndex));
         }
-        
-        if(longestMatch != null) 
-        	System.out.println("Longest match: " + longestMatch.type() + longestMatch.value()); // Debug
-        return longestMatch;
     }
     
-    private TokenMatch findLongestMatch(String input) {
-        TokenMatch longestMatch = null;
-        int maxLength = 0;
-        
-        // Handle comments first
-        if (input.startsWith("//")) {
-            int endIdx = input.indexOf('\n');
-            if (endIdx == -1) endIdx = input.length();
-            return new TokenMatch("SINGLE_LINE_COMMENT", input.substring(0, endIdx));
-        }
-        
-        if (input.startsWith("/*")) {
-            int endIdx = input.indexOf("*/");
-            if (endIdx != -1) {
-                return new TokenMatch("MULTI_LINE_COMMENT", input.substring(0, endIdx + 2));
-            }
-        }
-
-        // Try each pattern in order of definition (LinkedHashMap preserves order)
-        for (Map.Entry<String, DFA> entry : dfaPatterns.entrySet()) {
-            String patternType = entry.getKey();
-            DFA dfa = entry.getValue();
-            
-            if (dfa == null) continue;
-            
-            int length = findLongestAcceptingPrefix(dfa, input);
-            
-            // Only update if this match is longer or it's equal length but higher priority
-            if (length > maxLength || 
-                (length == maxLength && longestMatch != null && 
-                 shouldPreferPattern(patternType, longestMatch.type()))) {
-                maxLength = length;
-                longestMatch = new TokenMatch(patternType, input.substring(0, length));
-            }
-        }
-        
-        return longestMatch;
+    // Checks if a given token value is a keyword.
+    private boolean isKeyword(String value) {
+        Set<String> keywords = new HashSet<>(Arrays.asList(
+            "if", "else", "while", "return", "int", "float", "char", "boolean",
+            "global", "integer", "function", "string"
+        ));
+        return keywords.contains(value);
     }
-
-    private boolean shouldPreferPattern(String newPattern, String currentPattern) {
-        // Keywords should be preferred over IDENTIFIER
-        if (currentPattern.equals("IDENTIFIER") && isKeywordPattern(newPattern)) {
-            return true;
-        }
-        return false;
+    
+    // Checks if the token is a data type keyword.
+    private boolean isDataTypeKeyword(String value) {
+        Set<String> dataTypes = new HashSet<>(Arrays.asList("integer", "float", "char", "boolean", "string"));
+        return dataTypes.contains(value);
     }
-
-    private boolean isKeywordPattern(String pattern) {
-        return pattern.equals("INTEGER") || pattern.equals("DECIMAL") || 
-               pattern.equals("BOOLEAN") || pattern.equals("CHARACTER") ||
-               pattern.equals("GLOBAL") || pattern.equals("FUNCTION") || 
-               pattern.equals("VAR");
-    }
-
-    private int findLongestAcceptingPrefix(DFA dfa, String input) {
-        int maxAcceptingPos = 0;
-        State currentState = dfa.getStartState();
-
-        for (int i = 0; i < input.length() && currentState != null; i++) {
-            char c = input.charAt(i);
-            Map<Character, State> transitions = dfa.getTransitions(currentState);
-            if (!transitions.containsKey(c))
-                break;
-            currentState = transitions.get(c);
-            if (currentState != null && dfa.isAccepting(currentState))
-                maxAcceptingPos = i + 1;
-        }
-        return maxAcceptingPos;
-    }
-
- // In Lexer.java, modify updateSymbolTable:
-    private void updateSymbolTable(Token token) {
-        if (token == null) return;
-
-        switch (token.type) {
-            case GLOBAL -> {
-                isNextGlobal = true;
-                isDeclaration = true;
-                currentDeclType = null;  // Reset current type
-            }
-            case FUNCTION -> {
-                isFunctionDeclaration = true;
-                isDeclaration = true;
-                currentDeclType = "function";
-            }
-            case INTEGER, DECIMAL, BOOLEAN, CHARACTER -> {
-                currentDeclType = token.type.toString().toLowerCase();
-                isDeclaration = true;
-            }
-            case IDENTIFIER -> {
-                lastIdentifier = token.value;
-                if (isDeclaration && currentDeclType != null) {
-                    System.out.println("Adding symbol: " + token.value + " type: " + currentDeclType + " global: " + isNextGlobal); // Debug
-                    symbolTable.add(token.value, currentDeclType, isNextGlobal, null);
-                    
-                    // Only reset declaration state if not in function declaration
-                    if (!isFunctionDeclaration) {
-                        isDeclaration = false;
-                        currentDeclType = null;
-                        isNextGlobal = false;
-                    }
+    
+    // Processes a token for symbol table entries.
+    private void processTokenForSymbolTable(Token token) {
+        if (token.value.equals("global")) {
+            currentScope = "global";
+        } else if (token.value.equals("function")) {
+            expectingFunctionName = true;
+        } else if (isDataTypeKeyword(token.value)) {
+            pendingDataType = token.value;
+        } else if (token.type == TokenType.IDENTIFIER) {
+            if (expectingFunctionName) {
+                symbolTable.addSymbol(token.value, "function", "global",
+                        symbolTable.getNextMemoryLocation(), new HashMap<>(), null);
+                currentScope = token.value;
+                expectingFunctionName = false;
+            } else if (pendingDataType != null) {
+                if (tokenIndex + 2 < tokens.size() && tokens.get(tokenIndex + 1).type == TokenType.ASSIGN &&
+                    isLiteralToken(tokens.get(tokenIndex + 2).type)) {
+                    String literalValue = tokens.get(tokenIndex + 2).value;
+                    symbolTable.addSymbol(token.value, pendingDataType, currentScope,
+                        symbolTable.getNextMemoryLocation(), new HashMap<>(), literalValue);
+                    pendingDataType = null;
+                } else {
+                    symbolTable.addSymbol(token.value, pendingDataType, currentScope,
+                        symbolTable.getNextMemoryLocation(), new HashMap<>(), null);
+                    pendingDataType = null;
                 }
-            }
-            case ASSIGN -> {
-                // Don't reset declaration state on assignment
-                pendingAssignment = lastIdentifier;
-            }
-            case INTEGER_LITERAL, DECIMAL_LITERAL, BOOLEAN_LITERAL, CHARACTER_LITERAL -> {
-                if (pendingAssignment != null) {
-					if (token.type == TokenType.CHARACTER_LITERAL) {
-	                	System.out.println("Shgvdhgdvhedgvehgvehdvhvetting value for " + pendingAssignment + " to " + token.value); // Debug
-	                	
-					}
-                    symbolTable.setValue(pendingAssignment, token.value);
-                    pendingAssignment = null;
-                }
-            }
-            case LBRACE -> {
-                if (isFunctionDeclaration) {
-                    symbolTable.enterScope();
-                    isFunctionDeclaration = false;
-                }
-            }
-            case RBRACE -> {
-                symbolTable.exitScope();
-                isFunctionDeclaration = false;
-                isDeclaration = false;
-                currentDeclType = null;
-                isNextGlobal = false;
-                lastIdentifier = null;
-                pendingAssignment = null;
+            } else if (!symbolTable.contains(token.value)) {
+                symbolTable.addSymbol(token.value, "unknown", currentScope,
+                        symbolTable.getNextMemoryLocation(), new HashMap<>(), null);
             }
         }
     }
-
-    private Token recognizeDecimalLiteral(String input, int position, int lineNumber, int columnNumber) {
-        StringBuilder number = new StringBuilder();
-        int currentPos = position;
-        boolean hasDecimalPoint = false;
-        int length = input.length();
-        
-        // Case 1: Start with digits
-        while (currentPos < length && Character.isDigit(input.charAt(currentPos))) {
-            number.append(input.charAt(currentPos));
-            currentPos++;
-        }
-        
-        // Look for decimal point
-        if (currentPos < length && input.charAt(currentPos) == '.') {
-            hasDecimalPoint = true;
-            number.append('.');
-            currentPos++;
-            
-            // Read digits after decimal point
-            while (currentPos < length && Character.isDigit(input.charAt(currentPos))) {
-                number.append(input.charAt(currentPos));
-                currentPos++;
-            }
-        }
-        
-        // Case 2: Start with decimal point
-        if (position < length && input.charAt(position) == '.') {
-            hasDecimalPoint = true;
-            number.append('.');
-            currentPos = position + 1;
-            
-            // Must have at least one digit after decimal point
-            if (currentPos < length && Character.isDigit(input.charAt(currentPos))) {
-                while (currentPos < length && Character.isDigit(input.charAt(currentPos))) {
-                    number.append(input.charAt(currentPos));
-                    currentPos++;
-                }
-            } else {
-                return null; // Invalid decimal format
-            }
-        }
-        
-        // Check if we found a valid decimal number
-        if (hasDecimalPoint && number.length() > 1) {
-            String value = number.toString();
-            return new Token(TokenType.DECIMAL_LITERAL, value, lineNumber, columnNumber);
-        }
-        
-        return null;
+    
+    // Helper: Check if a token type is a literal.
+    private boolean isLiteralToken(TokenType type) {
+        return type == TokenType.INTEGER || type == TokenType.DECIMAL ||
+               type == TokenType.STRING || type == TokenType.BOOLEAN ||
+               type == TokenType.CHAR;
     }
-    public int getCurrentScope() {
-        return symbolTable.getCurrentScope();
-    }
-
+    
     public List<Token> getTokens() {
-        return Collections.unmodifiableList(tokens);
+        return tokens;
     }
-
+    
     public SymbolTable getSymbolTable() {
         return symbolTable;
     }
-
+    
     public ErrorHandler getErrorHandler() {
         return errorHandler;
     }
+    
+    public void printDFATransitionTables() {
+        System.out.println("=== DFA Transition Tables ===");
+        for (Map.Entry<TokenType, DFA> entry : tokenDFAs.entrySet()) {
+            System.out.println("DFA for token type: " + entry.getKey());
+            entry.getValue().displayTransitionTable();
+            System.out.println("-----------------------------------------------------");
+        }
+    }
+    
 }
-
-// Record to store token match information.
-record TokenMatch(String type, String value) {}

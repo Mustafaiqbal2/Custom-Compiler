@@ -27,6 +27,8 @@ public class Main {
             
             // Create lexer instance
             Lexer lexer = new Lexer(code);
+            System.out.println("=== DFA Transition Tables ===");
+            lexer.printDFATransitionTables();
             
             // Perform lexical analysis
             System.out.println("=== Testing Lexical Analysis ===");

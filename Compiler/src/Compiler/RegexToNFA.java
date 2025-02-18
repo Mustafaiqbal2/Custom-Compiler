@@ -1,598 +1,213 @@
-package Compiler.automata;
+package Compiler;
 
 import java.util.*;
 
-
-
-
-public class RegexToNFAConverter {
-    private int stateCounter = 0;
-
-
-    private String parseRegex(String regex) {
-        String preprocessed = preprocess(regex);
-        System.out.println("After preprocessing: " + preprocessed);
-        return infixToPostfix(preprocessed);
-    }
-
-    private String preprocess(String regex) {
-        StringBuilder processed = new StringBuilder();
-        boolean inCharClass = false;
-        boolean escaped = false;
-        boolean inGroup = false;
-        
-        for (int i = 0; i < regex.length(); i++) {
-            char c = regex.charAt(i);
-            
-            if (c == '\\' && !escaped) {
-                escaped = true;
-                processed.append(c);
-                continue;
-            }
-            
-            if (c == '[' && !escaped) {
-                inCharClass = true;
-                processed.append(c);
-                continue;
-            }
-            
-            if (c == ']' && !escaped) {
-                inCharClass = false;
-                processed.append(c);
-                continue;
-            }
-            
-            if (c == '(' && !escaped) {
-                inGroup = true;
-                processed.append(c);
-                continue;
-            }
-            
-            if (c == ')' && !escaped) {
-                inGroup = false;
-                processed.append(c);
-                continue;
-            }
-            
-            if (escaped) {
-                processed.append(c);
-                escaped = false;
-                continue;
-            }
-            
-            processed.append(c);
-            
-            // Only add concatenation if:
-            // 1. Not in a character class
-            // 2. Not in a group
-            // 3. Next character exists and needs concatenation
-            if (!inCharClass && !inGroup && i + 1 < regex.length()) {
-                char next = regex.charAt(i + 1);
-                if (shouldAddConcatenation(c, next)) {
-                    processed.append('#');  // Use '#' for concatenation instead of '.'
-                }
-            }
-        }
-        
-        return processed.toString();
-    }
-
-    private boolean shouldAddConcatenation(char current, char next) {
-        // Don't add concatenation in these cases
-        return !(current == '\\' || next == '\\' ||  // Escapes
-                current == '(' || next == ')' ||     // Groups
-                current == '[' || next == ']' ||     // Character classes
-                current == '|' || next == '|' ||     // Alternation
-                next == '*' || next == '+' || next == '?' || // Quantifiers
-                next == '#' ||                       // Explicit concatenation (now '#')
-                (current == '#' && isMetaChar(next))); // Special case for concatenation operator
-    }
-
-    private boolean isMetaChar(char c) {
-        return c == '*' || c == '+' || c == '?' || c == '|' || 
-               c == '(' || c == ')' || c == '[' || c == ']' || 
-               c == '\\' || c == '#' || c == '^' || c == '$';
-    }
-
-    private String infixToPostfix(String infix) {
-        StringBuilder postfix = new StringBuilder();
-        Stack<Character> operators = new Stack<>();
-        Map<Character, Integer> precedence = new HashMap<>();
-        boolean inCharClass = false;
-        precedence.put('|', 1);
-        precedence.put('#', 2);  // '#' is the concatenation operator now
-        precedence.put('*', 3);
-        precedence.put('+', 3);
-        precedence.put('?', 3);
-
-        for (int i = 0; i < infix.length(); i++) {
-            char c = infix.charAt(i);
-            
-            // Handle escape sequences as one unit.
-            if (c == '\\') {
-                if (i + 1 < infix.length()) {
-                    // Append the entire escape sequence as a single token.
-                    postfix.append('\\');
-                    postfix.append(infix.charAt(++i));
-                }
-                continue;
-            }
-            
-            if (c == '[') {
-                inCharClass = true;
-                StringBuilder charClass = new StringBuilder("[");
-                while (++i < infix.length()) {
-                    char curr = infix.charAt(i);
-                    charClass.append(curr);
-                    if (curr == ']') {
-                        inCharClass = false;
-                        break;
-                    }
-                    if (curr == '\\' && i + 1 < infix.length()) {
-                        charClass.append(infix.charAt(++i));
-                    }
-                }
-                postfix.append(charClass);
-                continue;
-            }
-            
-            if (!inCharClass) {
-                if (c == '(') {
-                    operators.push(c);
-                } else if (c == ')') {
-                    while (!operators.isEmpty() && operators.peek() != '(') {
-                        postfix.append(operators.pop());
-                    }
-                    if (!operators.isEmpty())
-                        operators.pop(); // Remove '('
-                } else if (isOperator(c)) {
-                    while (!operators.isEmpty() && operators.peek() != '(' &&
-                           precedence.get(operators.peek()) >= precedence.get(c)) {
-                        postfix.append(operators.pop());
-                    }
-                    operators.push(c);
-                } else {
-                    postfix.append(c);
-                }
-            }
-        }
-
-        while (!operators.isEmpty()) {
-            char op = operators.pop();
-            if (op != '(')
-                postfix.append(op);
-        }
-
-        return postfix.toString();
-    }
-
-    private boolean isOperator(char c) {
-        return c == '|' || c == '#' || c == '*' || c == '+' || c == '?';
-    }
-
+public class RegexToNFA {
+    private int stateCount = 0;
+    
     public NFA convert(String regex) {
-        try {
-            System.out.println("Converting regex: " + regex);
-            String postfix = parseRegex(regex);
-            System.out.println("Postfix notation: " + postfix);
-            return thompsonConstruction(postfix);
-        } catch (Exception e) {
-            System.err.println("Error converting regex: " + e.getMessage());
-            throw new IllegalArgumentException("Failed to convert regex: " + regex, e);
-        }
-    }
-
-    private NFA thompsonConstruction(String postfix) {
+        //System.out.println("Original regex: " + regex);
+        String preprocessed = preprocessRegex(regex);
+        //System.out.println("Preprocessed regex: " + preprocessed);
+        
+        List<String> tokens = tokenizeRegex(preprocessed);
+        //System.out.println("Tokenized regex: " + tokens);
+        
+        List<String> concatTokens = insertConcatenationOperator(tokens);
+        //System.out.println("Tokens after concatenation insertion: " + concatTokens);
+        
+        List<String> postfixTokens = infixToPostfix(concatTokens);
+        System.out.println("Postfix tokens: " + postfixTokens);
+        
         Stack<NFA> stack = new Stack<>();
-        StringBuilder group = new StringBuilder();
-        boolean inGroup = false;
-        
-        if(postfix.equals("\\+")) {
-            return createBasicNFA('+');
-        }
-        if (postfix.equals("\\*")) {
-            System.out.println("Creating * NFA");
-            return createBasicNFA('*');
-        }
-        if (postfix.equals("'[^'\\\\]\\\\[ntrfb'\"\\\\]|\\\\[0-7]{1,3}|\\\\u[0-9a-fA-F]{4}|'#")) {
-            return createCharacterLiteralNFA();
-        }
-        if (postfix.equals("in#t#e#g#e#r#[^A-Za-z0-9_]#")){
-        	return createKeywordNFA("integer");   // makes the correct dfa for the keyword integer
-        }
-        
-        
-
-        for (int i = 0; i < postfix.length(); i++) {
-            char c = postfix.charAt(i);
-
-            // Handle character class groups
-            if (c == '[' && !inGroup) {
-                inGroup = true;
-                continue;
-            }
-            
-            if (inGroup) {
-                if (c == ']') {
-                    inGroup = false;
-                    stack.push(createCharacterClassNFA(group.toString()));
-                    group = new StringBuilder();
-                } else {
-                    group.append(c);
+        for (String token : postfixTokens) {
+            //System.out.println("Processing token: " + token + ", Stack size: " + stack.size());
+            if (token.equals("*")) {
+                if (stack.isEmpty()) {
+                    throw new RuntimeException("Stack empty when expecting operand for '*'");
                 }
-                continue;
-            }
-
-            // Handle special cases for literals
-            if (isLiteralStart(c)) {
-                StringBuilder literal = new StringBuilder();
-                literal.append(c);
-                while (i + 1 < postfix.length() && isLiteralPart(postfix.charAt(i + 1))) {
-                    literal.append(postfix.charAt(++i));
+                NFA nfaStar = stack.pop();
+                stack.push(applyKleeneStar(nfaStar));
+            } else if (token.equals("·")) { // explicit concatenation operator
+                if (stack.size() < 2) {
+                    throw new RuntimeException("Stack has fewer than 2 operands for concatenation");
                 }
-                stack.push(createLiteralNFA(literal.toString()));
-                continue;
-            }
-
-            // Handle operators
-            if (isOperator(c)) {
-                try {
-                    switch (c) {
-                        case '#':  // Concatenation operator
-                            NFA right = stack.pop();
-                            NFA left = stack.pop();
-                            stack.push(createConcatenationNFA(left, right));
-                            break;
-                        case '|':
-                            NFA alt2 = stack.pop();
-                            NFA alt1 = stack.pop();
-                            stack.push(createUnionNFA(alt1, alt2));
-                            break;
-                        case '*':
-                            stack.push(createKleeneStarNFA(stack.pop()));
-                            break;
-                        case '+':
-                            stack.push(createPlusNFA(stack.pop()));
-                            break;
-                        case '?':
-                            stack.push(createOptionalNFA(stack.pop()));
-                            break;
-                    }
-                } catch (EmptyStackException e) {
-                    throw new IllegalArgumentException("Invalid regex expression: missing operand");
+                NFA nfa2 = stack.pop();
+                NFA nfa1 = stack.pop();
+                stack.push(applyConcatenation(nfa1, nfa2));
+            } else if (token.equals("|")) {
+                if (stack.size() < 2) {
+                    throw new RuntimeException("Stack has fewer than 2 operands for union");
                 }
+                NFA nfaB = stack.pop();
+                NFA nfaA = stack.pop();
+                stack.push(applyUnion(nfaA, nfaB));
             } else {
-                stack.push(createBasicNFA(c));
+                // token is a literal (which might be an escaped sequence)
+                stack.push(buildBasicNFA(token));
             }
         }
-        
-        
-		
-
-        if (stack.isEmpty()) {
-            throw new IllegalArgumentException("Invalid regex expression");
+        if (stack.size() != 1) {
+            throw new RuntimeException("Regex conversion error: stack size is not 1 after processing. Stack size: " + stack.size());
         }
-
         return stack.pop();
     }
     
-    private NFA createKeywordNFA(String keyword) {
-        NFA nfa = new NFA();
-        State current = createNewState();
-        nfa.setStartState(current);
-        
-        // Create a linear chain of states for the keyword
-        for (char c : keyword.toCharArray()) {
-            State next = createNewState();
-            nfa.addTransition(current, c, next);
-            current = next;
-        }
-        
-        nfa.addAcceptingState(current);
-        return nfa;
+    // Preprocess the regex (e.g., expand character classes, handle '+' operator if needed)
+    private String preprocessRegex(String regex) {
+        // Expand [a-z] into (a|b|...|z)
+        regex = regex.replaceAll("\\[a-z\\]", "(a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|q|r|s|t|u|v|w|x|y|z)");
+        // Expand [0-9] into (0|1|2|3|4|5|6|7|8|9)
+        regex = regex.replaceAll("\\[0-9\\]", "(0|1|2|3|4|5|6|7|8|9)");
+        // Convert + for group operands: (X)+ becomes X·X*
+        regex = regex.replaceAll("(\\([^\\)]+\\))\\+", "$1·$1*");
+        // Convert + for single literal operands: a+ becomes a·a*
+        regex = regex.replaceAll("([a-zA-Z0-9])\\+", "$1·$1*");
+        return regex;
     }
-
-    private boolean isWordChar(char c) {
-        return Character.isLetterOrDigit(c) || c == '_';
-    }
-
-    private boolean isLiteralStart(char c) {
-        return c == '\'' || Character.isDigit(c);
-    }
-
-    private boolean isLiteralPart(char c) {
-        return Character.isDigit(c) || c == '.' || c == '\\' || 
-               (c >= 'a' && c <= 'z') || c == '\'';
-    }
-
-    private NFA createLiteralNFA(String literal) {
-        if (literal.contains(".") ) {
-            return createDecimalLiteralNFA(literal);
-        }
-        return null; // This could cause issues with other literals
-    }
-
-    private NFA createDecimalLiteralNFA(String decimal) {
-        NFA nfa = new NFA();
-        State start = createNewState();
-        State beforeDecimal = createNewState();
-        State decimalPoint = createNewState();
-        State afterDecimal = createNewState();
-        State end = createNewState();
-        
-        nfa.setStartState(start);
-        nfa.addAcceptingState(end);
-        
-        // Handle digits before decimal point
-        for (char digit = '0'; digit <= '9'; digit++) {
-            nfa.addTransition(start, digit, beforeDecimal);
-            nfa.addTransition(beforeDecimal, digit, beforeDecimal);
-        }
-        
-        // Handle decimal point
-        nfa.addTransition(beforeDecimal, '.', decimalPoint);
-        nfa.addTransition(start, '.', decimalPoint);  // For numbers starting with decimal
-        
-        // Handle digits after decimal point
-        for (char digit = '0'; digit <= '9'; digit++) {
-            nfa.addTransition(decimalPoint, digit, afterDecimal);
-            nfa.addTransition(afterDecimal, digit, afterDecimal);
-        }
-        
-        // Set accepting states for different valid decimal formats
-        nfa.addAcceptingState(afterDecimal);  // For numbers like "1.23"
-        nfa.addAcceptingState(decimalPoint);   // For numbers like "1."
-        
-        return nfa;
-    }
-
     
-
-    private NFA createCharacterLiteralNFA() {
-        NFA nfa = new NFA();
-        
-        // Create states
-        State start = createNewState();
-        State afterFirstQuote = createNewState();
-        State afterBackslash = createNewState();
-        State afterChar = createNewState();
-        State end = createNewState();
-        
-        // States for octal sequences
-        State afterFirstOctal = createNewState();
-        State afterSecondOctal = createNewState();
-        
-        // States for unicode sequence
-        State afterU = createNewState();
-        State afterHex1 = createNewState();
-        State afterHex2 = createNewState();
-        State afterHex3 = createNewState();
-        State afterHex4 = createNewState();
-        
-        nfa.setStartState(start);
-        nfa.addAcceptingState(end);
-
-        // First quote transition
-        nfa.addTransition(start, '\'', afterFirstQuote);
-        
-        // Add transitions for all printable ASCII characters (except ' and \)
-        for (char c = 32; c <= 126; c++) {
-            if (c != '\'' && c != '\\') {
-                nfa.addTransition(afterFirstQuote, c, afterChar);
-            }
-        }
-        
-        // Backslash transition for escape sequences
-        nfa.addTransition(afterFirstQuote, '\\', afterBackslash);
-        
-        // Simple escape sequences
-        char[] escapeChars = {'n', 't', 'r', 'f', 'b', '\'', '\"', '\\'};
-        for (char c : escapeChars) {
-            nfa.addTransition(afterBackslash, c, afterChar);
-        }
-        
-        // Octal escape sequences (1-3 digits)
-        for (char c = '0'; c <= '7'; c++) {
-            nfa.addTransition(afterBackslash, c, afterFirstOctal);
-            nfa.addTransition(afterFirstOctal, c, afterSecondOctal);
-            nfa.addTransition(afterSecondOctal, c, afterChar);
-            // Allow shorter octal sequences
-            nfa.addTransition(afterFirstOctal, '\'', end);
-            nfa.addTransition(afterSecondOctal, '\'', end);
-        }
-        
-        // Unicode escape sequences
-        nfa.addTransition(afterBackslash, 'u', afterU);
-        
-        // Add transitions for hex digits (0-9, a-f, A-F)
-        char[] hexChars = "0123456789abcdefABCDEF".toCharArray();
-        for (char hexDigit : hexChars) {
-            nfa.addTransition(afterU, hexDigit, afterHex1);
-            nfa.addTransition(afterHex1, hexDigit, afterHex2);
-            nfa.addTransition(afterHex2, hexDigit, afterHex3);
-            nfa.addTransition(afterHex3, hexDigit, afterChar);
-        }
-        
-        // Closing quote transition from character state
-        nfa.addTransition(afterChar, '\'', end);
-
-        return nfa;
-    }
-    private State createNewState() {
-        return new State("s" + stateCounter++);
-    }
-
-    private NFA createBasicNFA(char c) {
-    	System.out.println("Creating basic NFA for: " + c);
-        NFA nfa = new NFA();
-        State start = createNewState();
-        State end = createNewState();
-        nfa.setStartState(start);
-        nfa.addAcceptingState(end);
-        nfa.addTransition(start, c, end);
-        return nfa;
-    }
-
-    private NFA createCharacterClassNFA(String charClass) {
-        Set<Character> validChars = new HashSet<>();
-        boolean escaped = false;
-        boolean negated = false;
-        int i = 0;
-        
-        if (charClass.startsWith("^")) {
-            negated = true;
-            i++;
-        }
-        
-        while (i < charClass.length()) {
-            char c = charClass.charAt(i);
-            
-            if (c == '\\' && !escaped) {
-                escaped = true;
-                i++;
-                continue;
-            }
-            
-            if (escaped) {
-                validChars.add(charClass.charAt(i));
-                escaped = false;
-                i++;
-                continue;
-            }
-            
-            if (i + 2 < charClass.length() && charClass.charAt(i + 1) == '-') {
-                char start = c;
-                char end = charClass.charAt(i + 2);
-                for (char ch = start; ch <= end; ch++) {
-                    validChars.add(ch);
-                }
-                i += 3;
+    // Tokenizes the regex string into a list of tokens.
+    // An escaped character (e.g., "\(") is treated as a single token.
+    private List<String> tokenizeRegex(String regex) {
+        List<String> tokens = new ArrayList<>();
+        for (int i = 0; i < regex.length(); i++) {
+            char c = regex.charAt(i);
+            if (c == '\\' && i + 1 < regex.length()) {
+                tokens.add(regex.substring(i, i + 2));
+                i++; // Skip next character as it's part of the escape
             } else {
-                validChars.add(c);
-                i++;
+                tokens.add(Character.toString(c));
             }
         }
-        
-        if (negated) {
-            Set<Character> allChars = new HashSet<>();
-            for (char c = 0; c < 128; c++) {
-                allChars.add(c);
+        return tokens;
+    }
+    
+    // Inserts an explicit concatenation operator "·" into the list of tokens where needed.
+    private List<String> insertConcatenationOperator(List<String> tokens) {
+        List<String> result = new ArrayList<>();
+        for (int i = 0; i < tokens.size(); i++) {
+            String token = tokens.get(i);
+            result.add(token);
+            if (i < tokens.size() - 1) {
+                String token2 = tokens.get(i + 1);
+                // If token is a literal or a closing parenthesis or a Kleene star
+                // and token2 is a literal or an opening parenthesis, insert "·".
+                if ((isLiteral(token) || token.equals("*") || token.equals(")"))
+                        && (isLiteral(token2) || token2.equals("("))) {
+                    result.add("·");
+                }
             }
-            allChars.removeAll(validChars);
-            validChars = allChars;
         }
-        
-        NFA nfa = new NFA();
-        State start = createNewState();
-        State end = createNewState();
-        nfa.setStartState(start);
-        nfa.addAcceptingState(end);
-        
-        for (char c : validChars) {
-            nfa.addTransition(start, c, end);
-        }
-        
-        return nfa;
-    }
-
-    private NFA createUnionNFA(NFA first, NFA second) {
-        NFA nfa = new NFA();
-        State start = createNewState();
-        State end = createNewState();
-        
-        nfa.setStartState(start);
-        nfa.addAcceptingState(end);
-        
-        nfa.addEpsilonTransition(start, first.getStartState());
-        nfa.addEpsilonTransition(start, second.getStartState());
-        
-        for (State acceptState : first.getAcceptingStates()) {
-            nfa.addEpsilonTransition(acceptState, end);
-        }
-        for (State acceptState : second.getAcceptingStates()) {
-            nfa.addEpsilonTransition(acceptState, end);
-        }
-        
-        nfa.addAllTransitions(first);
-        nfa.addAllTransitions(second);
-        
-        return nfa;
-    }
-
-    private NFA createConcatenationNFA(NFA first, NFA second) {
-        NFA nfa = new NFA();
-        nfa.setStartState(first.getStartState());
-        
-        for (State acceptState : first.getAcceptingStates()) {
-            nfa.addEpsilonTransition(acceptState, second.getStartState());
-        }
-        
-        for (State acceptState : second.getAcceptingStates()) {
-            nfa.addAcceptingState(acceptState);
-        }
-        
-        nfa.addAllTransitions(first);
-        nfa.addAllTransitions(second);
-        
-        return nfa;
-    }
-
-    private NFA createKleeneStarNFA(NFA nfa) {
-        NFA result = new NFA();
-        State start = createNewState();
-        State end = createNewState();
-        
-        result.setStartState(start);
-        result.addAcceptingState(end);
-        
-        result.addEpsilonTransition(start, end);
-        result.addEpsilonTransition(start, nfa.getStartState());
-        
-        for (State acceptState : nfa.getAcceptingStates()) {
-            result.addEpsilonTransition(acceptState, nfa.getStartState());
-            result.addEpsilonTransition(acceptState, end);
-        }
-        
-        result.addAllTransitions(nfa);
         return result;
     }
-
-    private NFA createPlusNFA(NFA nfa) {
-        NFA result = new NFA();
-        State start = createNewState();
-        State end = createNewState();
-        
-        result.setStartState(start);
-        result.addAcceptingState(end);
-        
-        result.addEpsilonTransition(start, nfa.getStartState());
-        
-        for (State acceptState : nfa.getAcceptingStates()) {
-            result.addEpsilonTransition(acceptState, nfa.getStartState());
-            result.addEpsilonTransition(acceptState, end);
+    
+    // Converts a list of tokens from infix to postfix notation.
+    private List<String> infixToPostfix(List<String> tokens) {
+        List<String> output = new ArrayList<>();
+        Stack<String> stack = new Stack<>();
+        for (String token : tokens) {
+            if (isLiteral(token)) {
+                output.add(token);
+            } else if (token.equals("(")) {
+                stack.push(token);
+            } else if (token.equals(")")) {
+                while (!stack.isEmpty() && !stack.peek().equals("(")) {
+                    output.add(stack.pop());
+                }
+                if (stack.isEmpty()) {
+                    throw new RuntimeException("Mismatched parentheses in regex");
+                }
+                stack.pop(); // Remove "("
+            } else {
+                // Operator: "*", "·", or "|"
+                while (!stack.isEmpty() && precedence(stack.peek()) >= precedence(token)) {
+                    output.add(stack.pop());
+                }
+                stack.push(token);
+            }
         }
-        
-        result.addAllTransitions(nfa);
-        return result;
+        while (!stack.isEmpty()) {
+            output.add(stack.pop());
+        }
+        return output;
     }
-
-    private NFA createOptionalNFA(NFA nfa) {
-        NFA result = new NFA();
-        State start = createNewState();
-        State end = createNewState();
-        
-        result.setStartState(start);
-        result.addAcceptingState(end);
-        
-        result.addEpsilonTransition(start, end);
-        result.addEpsilonTransition(start, nfa.getStartState());
-        
-        for (State acceptState : nfa.getAcceptingStates()) {
-            result.addEpsilonTransition(acceptState, end);
+    
+    // Determines if a token is considered a literal.
+    // Here, tokens that are operators ("*", "·", "|", "(", ")") are not literals.
+    private boolean isLiteral(String token) {
+        return !(token.equals("*") || token.equals("·") || token.equals("|") || token.equals("(") || token.equals(")"));
+    }
+    
+    // Defines operator precedence.
+    private int precedence(String op) {
+        switch (op) {
+            case "*": return 3;
+            case "·": return 2;
+            case "|": return 1;
+            default:  return 0;
         }
-        
-        result.addAllTransitions(nfa);
-        return result;
+    }
+    
+    // Builds a basic NFA for a literal token.
+    // If the token is an escape sequence (like "\("), we use the character after '\' as the literal.
+    // If the token is ".", we treat it as a wildcard.
+    private NFA buildBasicNFA(String token) {
+        // If the token is an escape sequence like "\(" or "\{", take the character after the backslash.
+        // Special-case "\n" to represent a newline.
+        if (token.length() > 1 && token.charAt(0) == '\\') {
+            char literal;
+            if (token.equals("\\n")) {
+                literal = '\n';
+            } else {
+                literal = token.charAt(1);
+            }
+            NFA.State start = new NFA.State(stateCount++);
+            NFA.State accept = new NFA.State(stateCount++);
+            start.addTransition(literal, accept);
+            return new NFA(start, accept);
+        } else if (token.equals(".")) {
+            // Wildcard: match any printable ASCII character (32 to 126)
+            NFA.State start = new NFA.State(stateCount++);
+            NFA.State accept = new NFA.State(stateCount++);
+            for (char ch = 32; ch < 127; ch++) {
+                start.addTransition(ch, accept);
+            }
+            return new NFA(start, accept);
+        } else {
+            // Otherwise, create an NFA for the single literal character.
+            char literal = token.charAt(0);
+            NFA.State start = new NFA.State(stateCount++);
+            NFA.State accept = new NFA.State(stateCount++);
+            start.addTransition(literal, accept);
+            return new NFA(start, accept);
+        }
+    }
+    
+    // Concatenates two NFAs.
+    private NFA applyConcatenation(NFA nfa1, NFA nfa2) {
+        nfa1.acceptState.addEpsilonTransition(nfa2.startState);
+        return new NFA(nfa1.startState, nfa2.acceptState);
+    }
+    
+    // Creates a union (alternation) of two NFAs.
+    private NFA applyUnion(NFA nfa1, NFA nfa2) {
+        NFA.State start = new NFA.State(stateCount++);
+        NFA.State accept = new NFA.State(stateCount++);
+        start.addEpsilonTransition(nfa1.startState);
+        start.addEpsilonTransition(nfa2.startState);
+        nfa1.acceptState.addEpsilonTransition(accept);
+        nfa2.acceptState.addEpsilonTransition(accept);
+        return new NFA(start, accept);
+    }
+    
+    // Applies the Kleene star operation to an NFA.
+    private NFA applyKleeneStar(NFA nfa) {
+        NFA.State start = new NFA.State(stateCount++);
+        NFA.State accept = new NFA.State(stateCount++);
+        start.addEpsilonTransition(nfa.startState);
+        start.addEpsilonTransition(accept);
+        nfa.acceptState.addEpsilonTransition(nfa.startState);
+        nfa.acceptState.addEpsilonTransition(accept);
+        return new NFA(start, accept);
     }
 }
-
