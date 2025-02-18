@@ -6,18 +6,16 @@ public class RegexToNFA {
     private int stateCount = 0;
     
     public NFA convert(String regex) {
-    	if (regex.startsWith("/\\*")) {  // Special case for multiline comments
-            return buildMultilineCommentNFA();
-        }
-        //System.out.println("Original regex: " + regex);
+    	
+        System.out.println("Original regex: " + regex);
         String preprocessed = preprocessRegex(regex);
-        //System.out.println("Preprocessed regex: " + preprocessed);
+        System.out.println("Preprocessed regex: " + preprocessed);
         
         List<String> tokens = tokenizeRegex(preprocessed);
-        //System.out.println("Tokenized regex: " + tokens);
+        System.out.println("Tokenized regex: " + tokens);
         
         List<String> concatTokens = insertConcatenationOperator(tokens);
-        //System.out.println("Tokens after concatenation insertion: " + concatTokens);
+        System.out.println("Tokens after concatenation insertion: " + concatTokens);
         
         List<String> postfixTokens = infixToPostfix(concatTokens);
         System.out.println("Postfix tokens: " + postfixTokens);
@@ -55,36 +53,7 @@ public class RegexToNFA {
         }
         return stack.pop();
     }
-    
-    private NFA buildMultilineCommentNFA() {
-        // Create states
-        NFA.State s0 = new NFA.State(stateCount++);  // Initial state
-        NFA.State s1 = new NFA.State(stateCount++);  // After seeing /
-        NFA.State s2 = new NFA.State(stateCount++);  // After seeing /*
-        NFA.State s3 = new NFA.State(stateCount++);  // After seeing * in comment
-        NFA.State s4 = new NFA.State(stateCount++);  // Accept state
-
-        // Add transitions
-        s0.addTransition('/', s1);           // Initial / transition
-        s1.addTransition('*', s2);           // * after / transition
-        
-        // Add transitions for comment body
-        for (char c = 0; c < 128; c++) {     // ASCII characters
-            if (c != '*') {
-                s2.addTransition(c, s2);     // Stay in comment body
-            }
-            if (c != '/' && c != '*') {
-                s3.addTransition(c, s2);     // Return to comment body
-            }
-        }
-        
-        s2.addTransition('*', s3);           // Potential end sequence
-        s3.addTransition('*', s3);           // Multiple * characters
-        s3.addTransition('/', s4);           // Complete end sequence
-
-        return new NFA(s0, s4);
-    }
-    
+   
     
     // Preprocess the regex (e.g., expand character classes, handle '+' operator if needed)
     private String preprocessRegex(String regex) {
@@ -96,18 +65,35 @@ public class RegexToNFA {
         regex = regex.replaceAll("(\\([^\\)]+\\))\\+", "$1·$1*");
         // Convert + for single literal operands: a+ becomes a·a*
         regex = regex.replaceAll("([a-zA-Z0-9])\\+", "$1·$1*");
+        // *New rules:*
+        // Convert + for a character class: [^]+ becomes [^]·[^]
+        regex = regex.replaceAll("(\\[[^\\]]+\\])\\+", "$1·$1*");
+        // Convert + for an escaped operator (non-alphanumeric): e.g., \+ becomes \·\**
+        regex = regex.replaceAll("(\\\\[^a-zA-Z0-9])\\+", "$1·$1*");
         return regex;
     }
     
     // Tokenizes the regex string into a list of tokens.
-    // An escaped character (e.g., "\(") is treated as a single token.
     private List<String> tokenizeRegex(String regex) {
         List<String> tokens = new ArrayList<>();
         for (int i = 0; i < regex.length(); i++) {
             char c = regex.charAt(i);
-            if (c == '\\' && i + 1 < regex.length()) {
+            // If we see the beginning of a character class, read until the matching ']'
+            if (c == '[') {
+                int j = i;
+                // Look for the closing ']'
+                while (j < regex.length() && regex.charAt(j) != ']') {
+                    j++;
+                }
+                if (j >= regex.length()) {
+                    throw new RuntimeException("Unmatched [ in regex");
+                }
+                // Add the entire bracket expression as a single token
+                tokens.add(regex.substring(i, j + 1));
+                i = j; // Advance i to the position of the closing ']'
+            } else if (c == '\\' && i + 1 < regex.length()) {
                 tokens.add(regex.substring(i, i + 2));
-                i++; // Skip next character as it's part of the escape
+                i++; // Skip the next character as it's part of the escape
             } else {
                 tokens.add(Character.toString(c));
             }
@@ -133,6 +119,7 @@ public class RegexToNFA {
         }
         return result;
     }
+
     
     // Converts a list of tokens from infix to postfix notation.
     private List<String> infixToPostfix(List<String> tokens) {
@@ -185,8 +172,42 @@ public class RegexToNFA {
     // If the token is an escape sequence (like "\("), we use the character after '\' as the literal.
     // If the token is ".", we treat it as a wildcard.
     private NFA buildBasicNFA(String token) {
-        // If the token is an escape sequence like "\(" or "\{", take the character after the backslash.
-        // Special-case "\n" to represent a newline.
+        // Handle character classes: e.g., [^] or [^/]
+        if (token.startsWith("[") && token.endsWith("]")) {
+            // Remove the square brackets.
+            String content = token.substring(1, token.length() - 1);
+            boolean negated = false;
+            if (!content.isEmpty() && content.charAt(0) == '^') {
+                negated = true;
+                content = content.substring(1);
+            }
+            NFA.State start = new NFA.State(stateCount++);
+            NFA.State accept = new NFA.State(stateCount++);
+            if (negated) 
+            {
+                // Accept any ASCII character (32 to 127) that is not in the set.
+                for (char ch = 32; ch < 127; ch++) 
+                {
+                    if (content.indexOf(ch) == -1) {
+                        start.addTransition(ch, accept);
+                    }
+                    
+                }
+                //add transition for newline
+                start.addTransition('\n', accept);
+            } 
+            else {
+                // For simplicity, add a transition for each character in the class.
+                // (You might want to extend this to support ranges like a-z.)
+                for (int i = 0; i < content.length(); i++) {
+                    char ch = content.charAt(i);
+                    start.addTransition(ch, accept);
+                }
+            }
+            return new NFA(start, accept);
+        }
+        
+        // Handle escaped sequences.
         if (token.length() > 1 && token.charAt(0) == '\\') {
             char literal;
             if (token.equals("\\n")) {
@@ -207,7 +228,7 @@ public class RegexToNFA {
             }
             return new NFA(start, accept);
         } else {
-            // Otherwise, create an NFA for the single literal character.
+            // Otherwise, treat the token as a single literal.
             char literal = token.charAt(0);
             NFA.State start = new NFA.State(stateCount++);
             NFA.State accept = new NFA.State(stateCount++);

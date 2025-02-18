@@ -118,7 +118,19 @@ public class DFA {
             StringBuilder transStr = new StringBuilder();
             for (Map.Entry<Character, DFANode> entry : node.transitions.entrySet()) {
                 int targetId = stateIdMap.get(entry.getValue());
-                transStr.append(entry.getKey()).append("->").append(targetId).append("  ");
+                // display different for new line character
+                if (entry.getKey() == '\n') 
+                {
+                    transStr.append("NL").append("->").append(targetId).append("  ");
+                }
+                else if(entry.getKey() == ' ')
+                {
+                	transStr.append("SP").append("->").append(targetId).append("  ");
+                }
+                else
+                {
+                	transStr.append(entry.getKey()).append("->").append(targetId).append("  ");
+                }
             }
             System.out.printf("| %-8s | %-40s |\n", displayId, transStr.toString());
         }

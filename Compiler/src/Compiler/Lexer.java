@@ -35,7 +35,7 @@ public class Lexer {
         // Note: Regexes are simplified.
     	// Comments
     	String singleLineCommentRegex = "//.*";
-    	String multiLineCommentRegex = "/\\*(.|\\n)*\\*/";
+    	String multiLineCommentRegex = "/\\*([^*]|\\*+[^*/])*\\*+/";
     	
     	// Literals (using simpler patterns)
     	String stringRegex   = "\".*\"";       // greedy matching for strings
@@ -99,6 +99,7 @@ public class Lexer {
             for (Map.Entry<TokenType, DFA> entry : tokenDFAs.entrySet()) {
                 DFA dfa = entry.getValue();
                 String tokenValue = dfa.match(input.substring(pos));
+				
                 if (tokenValue != null && !tokenValue.isEmpty()) {
                     TokenType type = entry.getKey();
                     if (type == TokenType.IDENTIFIER && isKeyword(tokenValue)) {
@@ -194,6 +195,7 @@ public class Lexer {
             System.out.println("DFA for token type: " + entry.getKey());
             entry.getValue().displayTransitionTable();
             System.out.println("-----------------------------------------------------");
+        	
         }
     }
     
