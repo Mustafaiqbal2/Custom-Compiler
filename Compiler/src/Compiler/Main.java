@@ -39,6 +39,8 @@ public class Main {
                 System.out.printf("%s -> %s (Line: %d)%n", 
                                 token.type, token.value, token.lineNumber);
             }
+            // Display token count
+            System.out.println("\nTotal Tokens: " + lexer.getTokens().size());
 
             // Display symbol table
             System.out.println("\n=== Symbol Table ===");
