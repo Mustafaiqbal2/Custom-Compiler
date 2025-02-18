@@ -6,6 +6,9 @@ public class RegexToNFA {
     private int stateCount = 0;
     
     public NFA convert(String regex) {
+    	if (regex.startsWith("/\\*")) {  // Special case for multiline comments
+            return buildMultilineCommentNFA();
+        }
         //System.out.println("Original regex: " + regex);
         String preprocessed = preprocessRegex(regex);
         //System.out.println("Preprocessed regex: " + preprocessed);
@@ -52,6 +55,36 @@ public class RegexToNFA {
         }
         return stack.pop();
     }
+    
+    private NFA buildMultilineCommentNFA() {
+        // Create states
+        NFA.State s0 = new NFA.State(stateCount++);  // Initial state
+        NFA.State s1 = new NFA.State(stateCount++);  // After seeing /
+        NFA.State s2 = new NFA.State(stateCount++);  // After seeing /*
+        NFA.State s3 = new NFA.State(stateCount++);  // After seeing * in comment
+        NFA.State s4 = new NFA.State(stateCount++);  // Accept state
+
+        // Add transitions
+        s0.addTransition('/', s1);           // Initial / transition
+        s1.addTransition('*', s2);           // * after / transition
+        
+        // Add transitions for comment body
+        for (char c = 0; c < 128; c++) {     // ASCII characters
+            if (c != '*') {
+                s2.addTransition(c, s2);     // Stay in comment body
+            }
+            if (c != '/' && c != '*') {
+                s3.addTransition(c, s2);     // Return to comment body
+            }
+        }
+        
+        s2.addTransition('*', s3);           // Potential end sequence
+        s3.addTransition('*', s3);           // Multiple * characters
+        s3.addTransition('/', s4);           // Complete end sequence
+
+        return new NFA(s0, s4);
+    }
+    
     
     // Preprocess the regex (e.g., expand character classes, handle '+' operator if needed)
     private String preprocessRegex(String regex) {

@@ -36,7 +36,7 @@ public class Lexer {
     	// Comments
     	String singleLineCommentRegex = "//.*";
     	String multiLineCommentRegex = "/\\*(.|\\n)*\\*/";
-
+    	
     	// Literals (using simpler patterns)
     	String stringRegex   = "\".*\"";       // greedy matching for strings
     	String charRegex     = "'.'";          // a single character between single quotes
