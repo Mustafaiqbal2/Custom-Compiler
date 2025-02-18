@@ -1,5 +1,5 @@
 global integer max = 100  
-global float pi = 3.14159  
+global float pi = 3.14159
 global boolean flag = true  
 global char letter = 'a'  
 global string greeting = "hello, world"  
@@ -19,6 +19,7 @@ function main() {
     sum = pi * max
     sum = pi / max
     sum = pi % max
+    sum = pi ^ max
     
     // single-line comment: testing loop and arithmetic operations
     while (count < max) {  

@@ -43,7 +43,7 @@ public class Lexer {
     	String booleanRegex  = "true|false";   // boolean literals
 
     	// Numeric literals
-    	String decimalRegex  = "[0-9]+\\.[0-9]+"; // one or more digits, a dot, one or more digits
+    	String decimalRegex  = "[0-9]+\\.([0-9]  |[0-9][0-9]   |[0-9][0-9][0-9]   |[0-9][0-9][0-9][0-9]   |[0-9][0-9][0-9][0-9][0-9])"; // one or more digits, a dot, max 5 digits
     	String integerRegex  = "[0-9]+";
 
     	// Punctuation and operators
@@ -52,7 +52,7 @@ public class Lexer {
     	String rparenRegex   = "\\)";
     	String lbraceRegex   = "\\{";
     	String rbraceRegex   = "\\}";
-    	String operatorRegex = "(\\+|\\-|\\*|/|%|<|>)";
+    	String operatorRegex = "(\\+|\\-|\\*|/|%|<|>|^)";
 
     	// Identifier (only lowercase letters per assignment)
     	String identifierRegex = "[a-z]+";
