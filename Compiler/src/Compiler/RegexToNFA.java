@@ -4,6 +4,7 @@ import java.util.*;
 
 public class RegexToNFA {
     private int stateCount = 0;
+    //////
     
     public NFA convert(String regex) {
     	
