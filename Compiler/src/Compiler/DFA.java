@@ -137,6 +137,109 @@ public class DFA {
         }
         System.out.println("---------------------------------------------------------------");
     }
+    /*
+    public void displayTransitionTable() {
+    // Build a mapping from each DFA state to a sequential id.
+    Map<DFANode, Integer> stateIdMap = new HashMap<>();
+    int id = 0;
+    for (DFANode node : allNodes) { // Assume allNodes is a collection of all DFA states
+        stateIdMap.put(node, id++);
+    }
+    
+    // Create a list of states sorted by their id (for consistent row order).
+    List<DFANode> sortedStates = new ArrayList<>(allNodes.size());
+    for (int i = 0; i < allNodes.size(); i++) {
+        sortedStates.add(null);
+    }
+    for (DFANode node : allNodes) {
+        int stateId = stateIdMap.get(node);
+        sortedStates.set(stateId, node);
+    }
+    
+    // Collect all characters that appear as keys in any state's transition map.
+    Set<Character> charSet = new TreeSet<>();
+    for (DFANode node : allNodes) {
+        charSet.addAll(node.transitions.keySet());
+    }
+    
+    // Prepare character labels (format "NL" for newline, "SP" for space).
+    List<String> charLabels = new ArrayList<>();
+    for (Character ch : charSet) {
+        String label;
+        if (ch == '\n') {
+            label = "NL";
+        } else if (ch == ' ') {
+            label = "SP";
+        } else {
+            label = ch.toString();
+        }
+        charLabels.add(label);
+    }
+    
+    // Prepare state labels (with markers: '-' for start, '+' for accepting).
+    List<String> stateLabels = new ArrayList<>();
+    for (DFANode node : sortedStates) {
+        int stateId = stateIdMap.get(node);
+        String marker = "";
+        if (node == startNode) {
+            marker += "-"; // start state marker
+        }
+        if (node.isAccept) {
+            marker += "+"; // accepting state marker
+        }
+        stateLabels.add(stateId + marker);
+    }
+    
+    // Print header of the table.
+    System.out.println("DFA Transition Table:");
+    // First row: "State" header followed by the character labels.
+    System.out.printf("| %-8s", "State");
+    for (String label : charLabels) {
+        System.out.printf("| %-8s", label);
+    }
+    System.out.println("|");
+    
+    // Print a separator line.
+    int totalColumns = 1 + charLabels.size();
+    for (int i = 0; i < totalColumns; i++) {
+        System.out.print("+--------");
+    }
+    System.out.println("+");
+    
+    // For each state (y-axis), print a row with transitions for each character (x-axis).
+    for (int i = 0; i < sortedStates.size(); i++) {
+        DFANode node = sortedStates.get(i);
+        String stateLabel = stateLabels.get(i);
+        System.out.printf("| %-8s", stateLabel);
+        
+        // For each character column, print the corresponding transition (if any).
+        for (Character ch : charSet) {
+            DFANode target = node.transitions.get(ch);
+            String cell = "";
+            if (target != null) {
+                int targetId = stateIdMap.get(target);
+                String targetMarker = "";
+                if (target == startNode) {
+                    targetMarker += "-";
+                }
+                if (target.isAccept) {
+                    targetMarker += "+";
+                }
+                cell = targetId + targetMarker;
+            }
+            System.out.printf("| %-8s", cell);
+        }
+        System.out.println("|");
+        
+        // Print a separator line after each row.
+        for (int j = 0; j < totalColumns; j++) {
+            System.out.print("+--------");
+        }
+        System.out.println("+");
+    }
+}
+
+     */
     
     // Inner class representing a node (state) in the DFA.
     public static class DFANode {
