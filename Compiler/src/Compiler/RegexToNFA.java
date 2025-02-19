@@ -196,6 +196,8 @@ public class RegexToNFA {
                 }
                 //add transition for newline
                 start.addTransition('\n', accept);
+                start.addTransition('\r', accept);
+                start.addTransition('\t', accept);
             } 
             else {
                 // For simplicity, add a transition for each character in the class.
@@ -204,6 +206,7 @@ public class RegexToNFA {
                     char ch = content.charAt(i);
                     start.addTransition(ch, accept);
                 }
+              
             }
             return new NFA(start, accept);
         }
