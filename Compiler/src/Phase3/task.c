@@ -187,75 +187,113 @@ bool is_terminal(char c) {
      return i;
  }
  
- // Remove left factoring
- Grammar remove_left_factoring(Grammar g) {
-     Grammar result = {0};
-     
-     // Copy non-terminals and terminals
-     memcpy(result.non_terminals, g.non_terminals, g.num_non_terminals);
-     result.num_non_terminals = g.num_non_terminals;
-     memcpy(result.terminals, g.terminals, g.num_terminals);
-     result.num_terminals = g.num_terminals;
- 
-     for (int i = 0; i < g.num_productions; i++) {
-         Production* p = &g.productions[i];
-         bool factoring_needed;
-         
-         do {
-             factoring_needed = false;
-             int max_prefix = 0;
-             int first_prod = 0;
-             
-             // Find longest common prefix
-             for (int j = 0; j < p->num_rhs; j++) {
-                 for (int k = j + 1; k < p->num_rhs; k++) {
-                     int prefix_len = common_prefix_length(p->rhs[j], p->rhs[k]);
-                     if (prefix_len > max_prefix) {
-                         max_prefix = prefix_len;
-                         first_prod = j;
-                         factoring_needed = true;
-                     }
-                 }
-             }
- 
-             if (factoring_needed) {
-                 char new_nt = get_next_non_terminal(result);
-                 result.non_terminals[result.num_non_terminals++] = new_nt;
-                 
-                 Production new_prod = {0};
-                 new_prod.lhs = p->lhs;
-                 
-                 char prefix[MAX_LENGTH];
-                 strncpy(prefix, p->rhs[first_prod], max_prefix);
-                 prefix[max_prefix] = '\0';
-                 
-                 sprintf(new_prod.rhs[0], "%s%c", prefix, new_nt);
-                 new_prod.num_rhs = 1;
-                 
-                 Production new_nt_prod = {0};
-                 new_nt_prod.lhs = new_nt;
-                 
-                 int new_rhs_count = 0;
-                 for (int j = 0; j < p->num_rhs; j++) {
-                     if (strncmp(p->rhs[j], prefix, max_prefix) == 0) {
-                         if (p->rhs[j][max_prefix] == '\0') {
-                             strcpy(new_nt_prod.rhs[new_rhs_count++], "&");
-                         } else {
-                             strcpy(new_nt_prod.rhs[new_rhs_count++], &p->rhs[j][max_prefix]);
-                         }
-                     }
-                 }
-                 new_nt_prod.num_rhs = new_rhs_count;
-                 
-                 result.productions[result.num_productions++] = new_prod;
-                 result.productions[result.num_productions++] = new_nt_prod;
-             }
-         } while (factoring_needed);
-     }
-     
-     return result;
- }
- 
+// Remove left factoring
+Grammar remove_left_factoring(Grammar g) {
+    Grammar result = {0};
+    bool any_factoring_needed = false;
+    
+    // First pass: check if any factoring is needed
+    for (int i = 0; i < g.num_productions && !any_factoring_needed; i++) {
+        Production* p = &g.productions[i];
+        for (int j = 0; j < p->num_rhs; j++) {
+            for (int k = j + 1; k < p->num_rhs; k++) {
+                int prefix_len = common_prefix_length(p->rhs[j], p->rhs[k]);
+                if (prefix_len > 0) {
+                    any_factoring_needed = true;
+                    break;
+                }
+            }
+            if (any_factoring_needed) break;
+        }
+    }
+    
+    // If no factoring needed, return original grammar
+    if (!any_factoring_needed) {
+        return g;
+    }
+    
+    // Copy non-terminals and terminals
+    memcpy(result.non_terminals, g.non_terminals, g.num_non_terminals);
+    result.num_non_terminals = g.num_non_terminals;
+    memcpy(result.terminals, g.terminals, g.num_terminals);
+    result.num_terminals = g.num_terminals;
+
+    // Process each production
+    for (int i = 0; i < g.num_productions; i++) {
+        Production* p = &g.productions[i];
+        bool factoring_needed;
+        
+        do {
+            factoring_needed = false;
+            int max_prefix = 0;
+            int first_prod = 0;
+            
+            // Find longest common prefix
+            for (int j = 0; j < p->num_rhs; j++) {
+                for (int k = j + 1; k < p->num_rhs; k++) {
+                    int prefix_len = common_prefix_length(p->rhs[j], p->rhs[k]);
+                    if (prefix_len > max_prefix) {
+                        max_prefix = prefix_len;
+                        first_prod = j;
+                        factoring_needed = true;
+                    }
+                }
+            }
+
+            if (factoring_needed) {
+                char new_nt = get_next_non_terminal(result);
+                result.non_terminals[result.num_non_terminals++] = new_nt;
+                
+                Production new_prod = {0};
+                new_prod.lhs = p->lhs;
+                
+                char prefix[MAX_LENGTH];
+                strncpy(prefix, p->rhs[first_prod], max_prefix);
+                prefix[max_prefix] = '\0';
+                
+                sprintf(new_prod.rhs[0], "%s%c", prefix, new_nt);
+                new_prod.num_rhs = 1;
+                
+                Production new_nt_prod = {0};
+                new_nt_prod.lhs = new_nt;
+                
+                int new_rhs_count = 0;
+                for (int j = 0; j < p->num_rhs; j++) {
+                    if (strncmp(p->rhs[j], prefix, max_prefix) == 0) {
+                        if (p->rhs[j][max_prefix] == '\0') {
+                            strcpy(new_nt_prod.rhs[new_rhs_count++], "ε");
+                        } else {
+                            strcpy(new_nt_prod.rhs[new_rhs_count++], &p->rhs[j][max_prefix]);
+                        }
+                    } else {
+                        // Copy productions that don't share the prefix to the result
+                        if (result.num_productions == 0 || 
+                            result.productions[result.num_productions-1].lhs != p->lhs) {
+                            Production orig_prod = {0};
+                            orig_prod.lhs = p->lhs;
+                            strcpy(orig_prod.rhs[0], p->rhs[j]);
+                            orig_prod.num_rhs = 1;
+                            result.productions[result.num_productions++] = orig_prod;
+                        } else {
+                            strcpy(result.productions[result.num_productions-1]
+                                   .rhs[result.productions[result.num_productions-1].num_rhs++], 
+                                   p->rhs[j]);
+                        }
+                    }
+                }
+                new_nt_prod.num_rhs = new_rhs_count;
+                
+                result.productions[result.num_productions++] = new_prod;
+                result.productions[result.num_productions++] = new_nt_prod;
+            } else if (result.num_productions == 0) {
+                // If no factoring needed for this production, copy it as is
+                result.productions[result.num_productions++] = *p;
+            }
+        } while (factoring_needed);
+    }
+    
+    return result;
+}
  // Remove left recursion
  Grammar remove_left_recursion(Grammar g) {
      Grammar result = {0};
@@ -633,7 +671,7 @@ int main() {
     print_grammar(factored_grammar);
     
     // Remove left recursion and print result
-    Grammar final_grammar = remove_left_recursion(original_grammar);
+    Grammar final_grammar = remove_left_recursion(factored_grammar);
     printf("\nGrammar after Left Recursion Removal:");
     print_grammar(final_grammar);
     
