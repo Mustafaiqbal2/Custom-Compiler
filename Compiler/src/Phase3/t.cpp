@@ -5,6 +5,7 @@
 #include <map>
 #include <set>
 #include <algorithm>
+#include <iomanip>
 
 
 #include <string>
@@ -28,42 +29,92 @@ string commonPrefix(const vector<string>& productions) {
     return prefix;
 }
 
-// Function to perform left factoring on a CFG
 void leftFactorCFG(map<string, vector<string>>& grammar) {
-    map<string, vector<string>> newGrammar;
-    int newVarCount = 1;
-
-    for (auto& [nonterminal, productions] : grammar) {
-        string prefix = commonPrefix(productions);
-        if (!prefix.empty() && prefix.length() > 0) {
-            string newNonTerminal = nonterminal + "'" + to_string(newVarCount++);
-            vector<string> factoredPart, remainingPart;
-            
-            for (const string& prod : productions) {
-                if (prod.substr(0, prefix.size()) == prefix) {
-                    string suffix = prod.substr(prefix.size());
-                    factoredPart.push_back(suffix.empty() ? "ε" : suffix);
-                } else {
-                    remainingPart.push_back(prod);
-                }
-            }
-            
-            newGrammar[nonterminal] = {prefix + newNonTerminal};
-            newGrammar[newNonTerminal] = factoredPart;
-            
-            if (!remainingPart.empty()) {
-                for (const auto& prod : remainingPart) {
-                    newGrammar[nonterminal].push_back(prod);
-                }
-            }
-        } else {
-            newGrammar[nonterminal] = productions;
+    // Helper function to find common prefix length between two strings
+    auto commonPrefixLength = [](const string& s1, const string& s2) {
+        size_t minLen = min(s1.length(), s2.length());
+        size_t common = 0;
+        while (common < minLen && s1[common] == s2[common]) {
+            common++;
         }
-    }
+        return common;
+    };
 
-    grammar = newGrammar;
+    // Helper function to get next available non-terminal name
+    auto getNewNonTerminal = [&](const string& base) {
+        int counter = 1;
+        string newName;
+        do {
+            newName = base + "'" + to_string(counter++);
+        } while (grammar.find(newName) != grammar.end());
+        return newName;
+    };
+
+    bool changes;
+    do {
+        changes = false;
+        map<string, vector<string>> newGrammar;
+
+        // Process each non-terminal
+        for (const auto& [nonterm, productions] : grammar) {
+            if (productions.size() <= 1) {
+                newGrammar[nonterm] = productions;
+                continue;
+            }
+
+            // Group productions by their first symbol
+            map<string, vector<string>> groups;
+            for (const string& prod : productions) {
+                string firstSymbol = prod.empty() ? "&" : prod.substr(0, prod.find(' '));
+                groups[firstSymbol].push_back(prod);
+            }
+
+            // Process each group
+            bool factored = false;
+            for (const auto& [first, group] : groups) {
+                if (group.size() <= 1) {
+                    if (!factored) {
+                        for (const string& prod : group) {
+                            newGrammar[nonterm].push_back(prod);
+                        }
+                    }
+                    continue;
+                }
+
+                // Find minimum common prefix length
+                size_t minCommon = group[0].length();
+                for (size_t i = 1; i < group.size(); i++) {
+                    minCommon = min(minCommon, commonPrefixLength(group[0], group[i]));
+                }
+
+                if (minCommon > 0) {
+                    factored = true;
+                    changes = true;
+
+                    // Extract common prefix and suffixes
+                    string prefix = group[0].substr(0, minCommon);
+                    string newNonTerm = getNewNonTerminal(nonterm);
+                    
+                    // Add new production with common prefix
+                    newGrammar[nonterm].push_back(prefix + " " + newNonTerm);
+                    
+                    // Add productions for new non-terminal
+                    for (const string& prod : group) {
+                        string suffix = prod.substr(minCommon);
+                        while (!suffix.empty() && suffix[0] == ' ') suffix = suffix.substr(1);
+                        newGrammar[newNonTerm].push_back(suffix.empty() ? "&" : suffix);
+                    }
+                } else if (!factored) {
+                    for (const string& prod : group) {
+                        newGrammar[nonterm].push_back(prod);
+                    }
+                }
+            }
+        }
+        
+        grammar = newGrammar;
+    } while (changes);
 }
-
 void removeLeftRecursion(map<string, vector<string>>& grammar) {
     vector<string> nonterminals;
     for (const auto& [nonterminal, _] : grammar) {
@@ -188,70 +239,75 @@ bool isNonTerminal(const string& symbol) {
 // Function to compute FIRST sets for all non-terminals
 map<string, set<string>> computeFirstSets(const map<string, vector<string>>& grammar) {
     map<string, set<string>> firstSets;
-    bool changed;
-
+    
     // Initialize FIRST sets
-    for (const auto& [nonTerminal, productions] : grammar) {
+    for (const auto& [nonTerminal, _] : grammar) {
         firstSets[nonTerminal] = {};
     }
 
+    bool changed;
     do {
         changed = false;
         
         // For each production rule
         for (const auto& [nonTerminal, productions] : grammar) {
             for (const string& production : productions) {
-                size_t pos = 0;
-                bool canBeEmpty = true;
-                
-                // Handle empty production
                 if (production == "&") {
+                    // Add epsilon to FIRST set
                     if (firstSets[nonTerminal].insert("&").second) {
                         changed = true;
                     }
                     continue;
                 }
 
-                // Process each symbol in the production
-                while (pos < production.length() && canBeEmpty) {
-                    string symbol;
-                    if (pos + 1 < production.length() && !isupper(production[pos]) && !isupper(production[pos + 1])) {
-                        // Handle terminal symbols that are two characters long (like id)
-                        symbol = production.substr(pos, 4);
-                        pos += 2;
+                // Split production into symbols
+                vector<string> symbols;
+                size_t pos = 0;
+                while (pos < production.length()) {
+                    if (!isspace(production[pos])) {
+                        string symbol;
+                        while (pos < production.length() && !isspace(production[pos])) {
+                            symbol += production[pos++];
+                        }
+                        symbols.push_back(symbol);
                     } else {
-                        symbol = string(1, production[pos]);
                         pos++;
-                    }
-
-                    if (!isNonTerminal(symbol)) {
-                        // If it's a terminal, add it to FIRST set
-                        if (firstSets[nonTerminal].insert(symbol).second) {
-                            changed = true;
-                        }
-                        canBeEmpty = false;
-                    } else {
-                        // If it's a non-terminal, add its FIRST set
-                        bool hasEpsilon = false;
-                        for (const string& first : firstSets[symbol]) {
-                            if (first != "&") {
-                                if (firstSets[nonTerminal].insert(first).second) {
-                                    changed = true;
-                                }
-                            } else {
-                                hasEpsilon = true;
-                            }
-                        }
-                        if (!hasEpsilon) {
-                            canBeEmpty = false;
-                        }
                     }
                 }
 
-                if (canBeEmpty) {
-                    if (firstSets[nonTerminal].insert("&").second) {
-                        changed = true;
+                if (symbols.empty()) continue;
+
+                // Process first symbol and subsequent ones if needed
+                bool allCanBeEmpty = true;
+                size_t symbolIndex = 0;
+                
+                while (allCanBeEmpty && symbolIndex < symbols.size()) {
+                    string currentSymbol = symbols[symbolIndex];
+                    
+                    if (!isNonTerminal(currentSymbol)) {
+                        // If terminal, add to FIRST set
+                        if (firstSets[nonTerminal].insert(currentSymbol).second) {
+                            changed = true;
+                        }
+                        allCanBeEmpty = false;
+                    } else {
+                        // If non-terminal, add its FIRST set (except ε)
+                        bool hasEpsilon = false;
+                        for (const string& first : firstSets[currentSymbol]) {
+                            if (first == "&") {
+                                hasEpsilon = true;
+                            } else if (firstSets[nonTerminal].insert(first).second) {
+                                changed = true;
+                            }
+                        }
+                        allCanBeEmpty = hasEpsilon;
                     }
+                    symbolIndex++;
+                }
+
+                // If all symbols can derive ε, add ε to FIRST set
+                if (allCanBeEmpty && firstSets[nonTerminal].insert("&").second) {
+                    changed = true;
                 }
             }
         }
@@ -288,12 +344,7 @@ map<string, set<string>> computeFollowSets(
                 
                 // Split production into symbols
                 while (pos < production.length()) {
-                    if (pos + 1 < production.length() && 
-                        production[pos] == ' ' && 
-                        (production[pos + 1] == '+' || production[pos + 1] == '*')) {
-                        symbols.push_back(string(1, production[pos + 1]));
-                        pos += 2;
-                    } else if (!isspace(production[pos])) {
+                    if (!isspace(production[pos])) {
                         string symbol;
                         while (pos < production.length() && !isspace(production[pos])) {
                             symbol += production[pos++];
@@ -358,12 +409,194 @@ void printSet(const string& name, const set<string>& set) {
     cout << "}" << endl;
 }
 
+// Structure to represent a production rule
+struct Production {
+    string left;      // Left-hand side
+    string right;     // Right-hand side
+    int ruleNumber;   // Rule number for reference
+};
+
+// Function to extract terminals from grammar and FIRST/FOLLOW sets
+set<string> getTerminals(
+    const map<string, vector<string>>& grammar,
+    const map<string, set<string>>& firstSets,
+    const map<string, set<string>>& followSets
+) {
+    set<string> terminals;
+    
+    // Add $ as it's always a terminal
+    terminals.insert("$");
+    
+    // Scan through grammar, FIRST and FOLLOW sets to collect terminals
+    for (const auto& [nonTerm, productions] : grammar) {
+        for (const string& prod : productions) {
+            if (prod == "&") continue;
+            
+            size_t pos = 0;
+            while (pos < prod.length()) {
+                if (!isspace(prod[pos])) {
+                    string symbol;
+                    while (pos < prod.length() && !isspace(prod[pos])) {
+                        symbol += prod[pos++];
+                    }
+                    if (!isupper(symbol[0])) {  // If not a non-terminal
+                        terminals.insert(symbol);
+                    }
+                } else {
+                    pos++;
+                }
+            }
+        }
+    }
+
+    return terminals;
+}
+
+// Function to create and display the parsing table
+void createParseTable(
+    const map<string, vector<string>>& grammar,
+    const map<string, set<string>>& firstSets,
+    const map<string, set<string>>& followSets,
+    const string& startSymbol
+) {
+    // Get terminals and non-terminals
+    set<string> terminals = getTerminals(grammar, firstSets, followSets);
+    vector<string> nonTerminals;
+    for (const auto& [nonTerm, _] : grammar) {
+        nonTerminals.push_back(nonTerm);
+    }
+    
+    // Create parsing table (using pair of strings as key)
+    map<pair<string, string>, string> parseTable;
+    
+    // For each production rule
+    for (const auto& [nonTerm, productions] : grammar) {
+        for (const string& prod : productions) {
+            if (prod == "&") {
+                // For ε-productions, use FOLLOW set
+                for (const string& follow : followSets.at(nonTerm)) {
+                    auto entry = make_pair(nonTerm, follow);
+                    if (parseTable.find(entry) != parseTable.end()) {
+                        cout << "Warning: Grammar is not LL(1)! Conflict at " << nonTerm << " with " << follow << endl;
+                    }
+                    parseTable[entry] = prod;
+                }
+            } else {
+                // Split production into symbols
+                vector<string> symbols;
+                size_t pos = 0;
+                while (pos < prod.length()) {
+                    if (!isspace(prod[pos])) {
+                        string symbol;
+                        while (pos < prod.length() && !isspace(prod[pos])) {
+                            symbol += prod[pos++];
+                        }
+                        symbols.push_back(symbol);
+                    } else {
+                        pos++;
+                    }
+                }
+
+                // Get first symbol
+                if (!symbols.empty()) {
+                    string firstSymbol = symbols[0];
+                    if (!isupper(firstSymbol[0])) {
+                        // If first symbol is terminal
+                        auto entry = make_pair(nonTerm, firstSymbol);
+                        if (parseTable.find(entry) != parseTable.end()) {
+                            cout << "Warning: Grammar is not LL(1)! Conflict at " << nonTerm << " with " << firstSymbol << endl;
+                        }
+                        parseTable[entry] = prod;
+                    } else {
+                        // If first symbol is non-terminal, use its FIRST set
+                        for (const string& first : firstSets.at(firstSymbol)) {
+                            if (first != "&") {
+                                auto entry = make_pair(nonTerm, first);
+                                if (parseTable.find(entry) != parseTable.end()) {
+                                    cout << "Warning: Grammar is not LL(1)! Conflict at " << nonTerm << " with " << first << endl;
+                                }
+                                parseTable[entry] = prod;
+                            }
+                        }
+                        // If first symbol can derive ε, need to look at FIRST of next symbols or FOLLOW
+                        if (firstSets.at(firstSymbol).count("&") > 0) {
+                            bool allCanBeEmpty = true;
+                            size_t symIdx = 1;
+                            while (allCanBeEmpty && symIdx < symbols.size()) {
+                                if (!isupper(symbols[symIdx][0])) {
+                                    auto entry = make_pair(nonTerm, symbols[symIdx]);
+                                    if (parseTable.find(entry) != parseTable.end()) {
+                                        cout << "Warning: Grammar is not LL(1)! Conflict at " << nonTerm << " with " << symbols[symIdx] << endl;
+                                    }
+                                    parseTable[entry] = prod;
+                                    allCanBeEmpty = false;
+                                } else {
+                                    for (const string& first : firstSets.at(symbols[symIdx])) {
+                                        if (first != "&") {
+                                            auto entry = make_pair(nonTerm, first);
+                                            if (parseTable.find(entry) != parseTable.end()) {
+                                                cout << "Warning: Grammar is not LL(1)! Conflict at " << nonTerm << " with " << first << endl;
+                                            }
+                                            parseTable[entry] = prod;
+                                        }
+                                    }
+                                    allCanBeEmpty = firstSets.at(symbols[symIdx]).count("&") > 0;
+                                }
+                                symIdx++;
+                            }
+                            if (allCanBeEmpty) {
+                                for (const string& follow : followSets.at(nonTerm)) {
+                                    auto entry = make_pair(nonTerm, follow);
+                                    if (parseTable.find(entry) != parseTable.end()) {
+                                        cout << "Warning: Grammar is not LL(1)! Conflict at " << nonTerm << " with " << follow << endl;
+                                    }
+                                    parseTable[entry] = prod;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Print the parsing table
+    cout << "\nLL(1) Parsing Table:\n\n";
+    
+    // Print header row with terminals
+    cout << setw(10) << "";
+    vector<string> sortedTerminals(terminals.begin(), terminals.end());
+    sort(sortedTerminals.begin(), sortedTerminals.end());
+    for (const string& terminal : sortedTerminals) {
+        cout << setw(15) << terminal;
+    }
+    cout << "\n" << string(10 + sortedTerminals.size() * 15, '-') << "\n";
+
+    // Print each row
+    sort(nonTerminals.begin(), nonTerminals.end());
+    for (const string& nonTerm : nonTerminals) {
+        cout << setw(10) << nonTerm;
+        for (const string& terminal : sortedTerminals) {
+            auto entry = parseTable.find({nonTerm, terminal});
+            if (entry != parseTable.end()) {
+                cout << setw(15) << (nonTerm + "->" + entry->second);
+            } else {
+                cout << setw(15) << "";
+            }
+        }
+        cout << "\n";
+    }
+}
+
+
 int main() {
     string filename = "grammar.txt";
     map<string, vector<string>> grammar = readCFG(filename);
     
     cout << "Original CFG:" << endl;
     printCFG(grammar);
+
+    
     
     leftFactorCFG(grammar);
     
@@ -386,13 +619,15 @@ int main() {
     }
     
     // Compute FOLLOW sets (assuming E is the start symbol)
-    auto followSets =  computeFollowSets(grammar, firstSets, "E");
+    auto followSets =  computeFollowSets(grammar, firstSets, "S");
     
     // Print FOLLOW sets
     cout << "\nFOLLOW sets:" << endl;
     for (const auto& [nonTerminal, followSet] : followSets) {
         printSet("FOLLOW(" + nonTerminal + ")", followSet);
     }
+
+    createParseTable(grammar, firstSets, followSets, "E");
 
     
     return 0;

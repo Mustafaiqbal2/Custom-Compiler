@@ -1,3 +1,2 @@
-E -> E + T | T
-T -> T * F | F
-F -> ( E ) | id | num
+S -> S A | A
+A -> a b A | a b c | a c
