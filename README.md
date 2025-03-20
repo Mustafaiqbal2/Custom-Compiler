@@ -1,10 +1,11 @@
 # Custom Compiler Implementation (CCL)
 
-A custom compiler implementation written in Java that processes Mustafa Saad (MS) files. This project implements lexical analysis (Phase 1) and symbol table management (Phase 2) for a custom programming language.
+A custom compiler implementation written in Java that processes Mustafa Saad (MS) files. This project implements lexical analysis (Phase 1), symbol table management (Phase 2), and syntax analysis (Phase 3) for a custom programming language.
 
-![Language Composition](https://img.shields.io/badge/Java-97.7%25-orange)
-![Language Composition](https://img.shields.io/badge/MAXScript-2.3%25-blue)
-![Last Updated](https://img.shields.io/badge/last%20updated-2025--02--18-brightgreen)
+![Language Composition](https://img.shields.io/badge/Java-43.6%25-orange)
+![Language Composition](https://img.shields.io/badge/C-29.2%25-blue)
+![Language Composition](https://img.shields.io/badge/C++-26.3%25-red)
+![Last Updated](https://img.shields.io/badge/last%20updated-2025--03--20-brightgreen)
 
 ## Features
 
@@ -13,6 +14,11 @@ A custom compiler implementation written in Java that processes Mustafa Saad (MS
 - **Pattern Matching**: Efficient token pattern recognition through regex to NFA to DFA conversion
 - **Error Handling**: Robust error detection and reporting during lexical analysis
 - **Symbol Table Management**: Comprehensive symbol table with scope recognition
+
+### Syntax Analysis (Phase 3)
+- **Parsing**: Implemented using LL(1) parsing technique
+- **AST Construction**: Abstract Syntax Tree construction for parsed code
+- **Error Handling**: Syntax error detection and reporting
 
 ### Language Specifications
 
@@ -60,10 +66,15 @@ src/
 │   │── DFA.java             # DFA implementation
 │   │── State.java           # Small class for state
 │   │── SymbolTable.java     # Symbol table implementation
-|   |── Main.java
-|   |── RegexToNFA           # Class for implementation of Thompson's Construction
+│   │── Main.java
+│   │── RegexToNFA           # Class for implementation of Thompson's Construction
 │   └── ErrorHandler.java    # Error handling and reporting
-|   
+│── src/Phase3/
+│   │── SyntaxAnalyzer.java  # Syntax analysis implementation
+│   │── ASTNode.java         # Abstract Syntax Tree node
+│   │── ASTBuilder.java      # AST builder implementation
+│   │── SemanticAnalyzer.java# Semantic analysis implementation
+│   └── CodeGenerator.java   # Code generation implementation
 ```
 
 ## Getting Started
@@ -74,7 +85,7 @@ src/
 ### Running the Compiler
 1. Clone the repository:
 ```bash
-git clone https://github.com/Mustafaiqbal2/Compiler-Phase-1-2.git
+git clone https://github.com/Mustafaiqbal2/Custom-Compiler.git
 ```
 
 2. Place your source code in a file with `.ms` extension
@@ -89,13 +100,14 @@ java -cp bin Compiler.Main
 ### Completed Features
 - ✅ Lexical Analysis (Phase 1)
 - ✅ Symbol Table Management (Phase 2)
+- ✅ Syntax Analysis (Phase 3)
 - ✅ Error Handling
 - ✅ DFA-based Token Recognition
 - ✅ Scope Recognition (only in symbol table)
 
 ### In Progress
-- 🔄 Syntax Analysis
 - 🔄 Semantic Analysis
+- 🔄 Code Generation
 
 ## Authors
 
@@ -107,4 +119,4 @@ java -cp bin Compiler.Main
 This project is available as open source under the terms of the MIT License.
 
 ---
-Last updated: 2025-02-18 10:45:15 UTC
+Last updated: 2025-03-20 19:28:07 UTC
