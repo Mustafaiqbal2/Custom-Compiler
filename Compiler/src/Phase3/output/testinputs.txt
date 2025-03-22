@@ -1,10 +1,12 @@
--- for first and follow sets --
+-- in the CGF each thing must be separated by a space like in the examples below ---
+
+-- testing for first and follow sets --
 S -> A C B | C b B | B a
 A -> d a | B C
 B -> g | &
 C -> h | & 
 
--- whole process --
+-- testing whole process --
 EXP -> TERM EXP'
 EXP' -> ADDOP TERM EXP' | &
 ADDOP -> + | -
