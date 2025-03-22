@@ -1,2 +1,2 @@
-S -> S A | A
-A -> a b A | a b c | a c
+S -> if E then S else S | if E then S | A
+A -> id

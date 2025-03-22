@@ -231,11 +231,25 @@ void printCFG(const map<string, vector<string>>& grammar) {
     }
 }
 
-// Helper function to check if a symbol is non-terminal
 bool isNonTerminal(const string& symbol) {
-    return isupper(symbol[0]); // Assuming non-terminals start with uppercase letters
+    // Check if string is empty
+    if(symbol.empty()) return false;
+    
+    // First character must be uppercase
+    if(!isupper(symbol[0])) return false;
+    
+    // Rest of the characters can be:
+    // - Uppercase letters (A-Z)
+    // - Numbers (0-9)
+    // - Apostrophe (')
+    for(size_t i = 1; i < symbol.length(); i++) {
+        char c = symbol[i];
+        if(!(isupper(c) || isdigit(c) || c == '\'')) {
+            return false;
+        }
+    }
+    return true;
 }
-
 // Function to compute FIRST sets for all non-terminals
 map<string, set<string>> computeFirstSets(const map<string, vector<string>>& grammar) {
     map<string, set<string>> firstSets;
@@ -320,74 +334,84 @@ map<string, set<string>> computeFollowSets(
     const map<string, set<string>>& firstSets,
     const string& startSymbol
 ) {
-    map<string, set<string>> followSets;
-
-    // Initialize FOLLOW sets
-    for (const auto& [nonTerminal, _] : grammar) {
-        followSets[nonTerminal] = {};
+    map<string, set<string>> follow;
+    
+    // Initialize follow set for all non-terminals
+    for (const auto& [nonTerm, _] : grammar) {
+        follow[nonTerm] = {};
     }
-
-    // Add $ to FOLLOW(S) where S is the start symbol
-    followSets[startSymbol].insert("$");
-
+    
+    // Add $ to follow set of start symbol
+    follow[startSymbol].insert("$");
+    
+    // Keep computing until no changes occur
     bool changed;
     do {
         changed = false;
         
         // For each production rule
-        for (const auto& [nonTerminal, productions] : grammar) {
+        for (const auto& [nonTerm, productions] : grammar) {
+            // For each alternative production
             for (const string& production : productions) {
                 if (production == "&") continue;
                 
-                vector<string> symbols;
-                size_t pos = 0;
-                
                 // Split production into symbols
-                while (pos < production.length()) {
-                    if (!isspace(production[pos])) {
-                        string symbol;
-                        while (pos < production.length() && !isspace(production[pos])) {
-                            symbol += production[pos++];
-                        }
-                        symbols.push_back(symbol);
-                    } else {
-                        pos++;
-                    }
+                vector<string> symbols;
+                istringstream ss(production);
+                string symbol;
+                while (ss >> symbol) {
+                    symbols.push_back(symbol);
                 }
-
-                // Process each symbol in the production
+                
+                // For each symbol in the production
                 for (size_t i = 0; i < symbols.size(); i++) {
+                    // If it's not a non-terminal, skip
                     if (!isNonTerminal(symbols[i])) continue;
-
-                    // For all symbols following the current one
-                    bool allCanBeEmpty = true;
-                    set<string> firstOfRemaining;
                     
-                    for (size_t j = i + 1; j < symbols.size() && allCanBeEmpty; j++) {
-                        if (!isNonTerminal(symbols[j])) {
-                            firstOfRemaining.insert(symbols[j]);
-                            allCanBeEmpty = false;
-                        } else {
-                            for (const string& first : firstSets.at(symbols[j])) {
+                    bool nullableRest = true;  // Can everything after current position derive null?
+                    
+                    // If not at the end, process the rest of the symbols
+                    if (i < symbols.size() - 1) {
+                        nullableRest = false;
+                        
+                        // Get the following symbols
+                        vector<string> rest(symbols.begin() + i + 1, symbols.end());
+                        
+                        // For each symbol that follows
+                        for (size_t j = 0; j < rest.size(); j++) {
+                            // If it's a terminal
+                            if (!isNonTerminal(rest[j])) {
+                                if (follow[symbols[i]].insert(rest[j]).second) {
+                                    changed = true;
+                                }
+                                break;
+                            }
+                            
+                            // If it's a non-terminal, add its FIRST set (except &)
+                            for (const string& first : firstSets.at(rest[j])) {
                                 if (first != "&") {
-                                    firstOfRemaining.insert(first);
+                                    if (follow[symbols[i]].insert(first).second) {
+                                        changed = true;
+                                    }
                                 }
                             }
-                            allCanBeEmpty = firstSets.at(symbols[j]).count("&") > 0;
+                            
+                            // Check if this symbol can derive empty
+                            if (firstSets.at(rest[j]).count("&") == 0) {
+                                break;
+                            }
+                            
+                            // If we reached the end and everything was nullable
+                            if (j == rest.size() - 1 && firstSets.at(rest[j]).count("&") > 0) {
+                                nullableRest = true;
+                            }
                         }
                     }
-
-                    // Add computed FIRST set to FOLLOW set
-                    for (const string& symbol : firstOfRemaining) {
-                        if (followSets[symbols[i]].insert(symbol).second) {
-                            changed = true;
-                        }
-                    }
-
-                    // If all following symbols can derive ε, or if this is the last symbol
-                    if (allCanBeEmpty || i == symbols.size() - 1) {
-                        for (const string& follow : followSets[nonTerminal]) {
-                            if (followSets[symbols[i]].insert(follow).second) {
+                    
+                    // If rest is nullable or we're at the end, add FOLLOW(nonTerm)
+                    if (nullableRest || i == symbols.size() - 1) {
+                        for (const string& followSymbol : follow[nonTerm]) {
+                            if (follow[symbols[i]].insert(followSymbol).second) {
                                 changed = true;
                             }
                         }
@@ -397,9 +421,8 @@ map<string, set<string>> computeFollowSets(
         }
     } while (changed);
 
-    return followSets;
+    return follow;
 }
-
 // Helper function to print sets
 void printSet(const string& name, const set<string>& set) {
     cout << name << " = { ";
@@ -416,7 +439,6 @@ struct Production {
     int ruleNumber;   // Rule number for reference
 };
 
-// Function to extract terminals from grammar and FIRST/FOLLOW sets
 set<string> getTerminals(
     const map<string, vector<string>>& grammar,
     const map<string, set<string>>& firstSets,
@@ -427,7 +449,7 @@ set<string> getTerminals(
     // Add $ as it's always a terminal
     terminals.insert("$");
     
-    // Scan through grammar, FIRST and FOLLOW sets to collect terminals
+    // Scan through grammar rules
     for (const auto& [nonTerm, productions] : grammar) {
         for (const string& prod : productions) {
             if (prod == "&") continue;
@@ -439,7 +461,7 @@ set<string> getTerminals(
                     while (pos < prod.length() && !isspace(prod[pos])) {
                         symbol += prod[pos++];
                     }
-                    if (!isupper(symbol[0])) {  // If not a non-terminal
+                    if (!isNonTerminal(symbol)) {  // Use the corrected isNonTerminal function
                         terminals.insert(symbol);
                     }
                 } else {
@@ -449,9 +471,25 @@ set<string> getTerminals(
         }
     }
 
+    // Also scan through FIRST and FOLLOW sets
+    for (const auto& [_, firstSet] : firstSets) {
+        for (const string& symbol : firstSet) {
+            if (symbol != "&" && !isNonTerminal(symbol)) {
+                terminals.insert(symbol);
+            }
+        }
+    }
+
+    for (const auto& [_, followSet] : followSets) {
+        for (const string& symbol : followSet) {
+            if (!isNonTerminal(symbol)) {
+                terminals.insert(symbol);
+            }
+        }
+    }
+
     return terminals;
 }
-
 // Function to create and display the parsing table
 void createParseTable(
     const map<string, vector<string>>& grammar,
@@ -619,7 +657,7 @@ int main() {
     }
     
     // Compute FOLLOW sets (assuming E is the start symbol)
-    auto followSets =  computeFollowSets(grammar, firstSets, "S");
+    auto followSets =  computeFollowSets(grammar, firstSets, "EXP");
     
     // Print FOLLOW sets
     cout << "\nFOLLOW sets:" << endl;
@@ -627,7 +665,7 @@ int main() {
         printSet("FOLLOW(" + nonTerminal + ")", followSet);
     }
 
-    createParseTable(grammar, firstSets, followSets, "E");
+    createParseTable(grammar, firstSets, followSets, "EXP");
 
     
     return 0;

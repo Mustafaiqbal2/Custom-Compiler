@@ -1,0 +1,22 @@
+-- for first and follow sets --
+S -> A C B | C b B | B a
+A -> d a | B C
+B -> g | &
+C -> h | & 
+
+-- whole process --
+EXP -> TERM EXP'
+EXP' -> ADDOP TERM EXP' | &
+ADDOP -> + | -
+TERM -> FACTOR TERM'
+TERM' -> MULOP FACTOR TERM' | &
+MULOP -> *
+FACTOR -> ( EXP ) | number
+
+-- ll(1) conflict test --
+S -> if E then S else S | if E then S | A
+A -> id
+
+
+
+answers can be matched thru slides
