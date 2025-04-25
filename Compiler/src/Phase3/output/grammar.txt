@@ -1,2 +1,7 @@
-S -> if E then S else S | if E then S | A
-A -> id
+EXP -> TERM EXP'
+EXP' -> ADDOP TERM EXP' | &
+ADDOP -> + | -
+TERM -> FACTOR TERM'
+TERM' -> MULOP FACTOR TERM' | &
+MULOP -> *
+FACTOR -> ( EXP ) | id

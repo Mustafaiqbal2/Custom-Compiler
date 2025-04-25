@@ -15,6 +15,7 @@
 
 using namespace std;
 
+//-----------------------------------------------------------------------Assignment 2 -------------------------------//
 // Function to find the common prefix among production rules
 string commonPrefix(const vector<string>& productions) {
     if (productions.empty()) return "";
@@ -492,6 +493,7 @@ set<string> getTerminals(
 }
 // Function to create and display the parsing table
 void createParseTable(
+    map<pair<string, string>, string>& parseTable,
     const map<string, vector<string>>& grammar,
     const map<string, set<string>>& firstSets,
     const map<string, set<string>>& followSets,
@@ -505,7 +507,7 @@ void createParseTable(
     }
     
     // Create parsing table (using pair of strings as key)
-    map<pair<string, string>, string> parseTable;
+    //map<pair<string, string>, string> parseTable;
     
     // For each production rule
     for (const auto& [nonTerm, productions] : grammar) {
@@ -624,48 +626,208 @@ void createParseTable(
         }
         cout << "\n";
     }
+
+    
 }
 
 
+//-----------------------------------------------------------------------Assignment 3 -------------------------------//
+// Structure to represent the parser state
+struct ParserState {
+    vector<string> stack;
+    string input;
+    size_t position;
+    bool error;
+    string errorMessage;
+};
+
+// Function to tokenize input string
+vector<string> tokenizeInput(const string& input) {
+    vector<string> tokens;
+    istringstream iss(input);
+    string token;
+    while (iss >> token) {
+        tokens.push_back(token);
+    }
+    tokens.push_back("$"); // Add end marker
+    return tokens;
+}
+
+// Function to print parser state
+void printParserState(const ParserState& state, const string& action) {
+    cout << "\nStack: [ ";
+    for (const string& symbol : state.stack) {
+        cout << symbol << " ";
+    }
+    cout << "]";
+    
+    cout << "\nInput: ";
+    for (size_t i = state.position; i < state.input.length(); i++) {
+        cout << state.input[i];
+    }
+    
+    cout << "\nAction: " << action << endl;
+    cout << string(50, '-') << endl;
+}
+
+// Function to parse a single input string
+bool parseString(
+    const string& input,
+    const map<pair<string, string>, string>& parseTable,
+    const string& startSymbol,
+    const set<string>& terminals
+) {
+    ParserState state;
+    state.input = input;
+    state.position = 0;
+    state.error = false;
+    
+    // Initialize stack with start symbol and end marker
+    state.stack.push_back("$");
+    state.stack.push_back(startSymbol);
+    
+    vector<string> inputTokens = tokenizeInput(input);
+    size_t inputPos = 0;
+    
+    cout << "\nParsing input: " << input << "\n";
+    
+    while (!state.stack.empty() && inputPos <= inputTokens.size()) {
+        string stackTop = state.stack.back();
+        string currentInput = inputPos < inputTokens.size() ? inputTokens[inputPos] : "$";
+        
+        // Print current state
+        cout << "\nStack: [ ";
+        for (const string& sym : state.stack) {
+            cout << sym << " ";
+        }
+        cout << "]";
+        cout << "\nCurrent Input: " << currentInput;
+        
+        if (stackTop == "$" && currentInput == "$") {
+            cout << "\nAction: Accept - Parsing Complete\n";
+            return true;
+        }
+        
+        if (stackTop == currentInput) {
+            // Terminal match
+            state.stack.pop_back();
+            inputPos++;
+            cout << "\nAction: Match and advance\n";
+        } else if (!isNonTerminal(stackTop)) {
+            // Terminal mismatch
+            cout << "\nError: Terminal mismatch - Expected " << stackTop 
+                 << " but got " << currentInput << "\n";
+            return false;
+        } else {
+            // Non-terminal on top
+            auto entry = parseTable.find({stackTop, currentInput});
+            if (entry == parseTable.end()) {
+                cout << "\nError: No parsing table entry for "
+                     << stackTop << " with input " << currentInput << "\n";
+                return false;
+            }
+            
+            // Replace non-terminal with its production
+            state.stack.pop_back();
+            string production = entry->second;
+            
+            if (production != "&") {  // If not epsilon
+                vector<string> symbols;
+                istringstream iss(production);
+                string symbol;
+                while (iss >> symbol) {
+                    symbols.push_back(symbol);
+                }
+                
+                // Push symbols in reverse order
+                for (auto it = symbols.rbegin(); it != symbols.rend(); ++it) {
+                    state.stack.push_back(*it);
+                }
+            }
+            
+            cout << "\nAction: Replace " << stackTop << " with " << production << "\n";
+        }
+        
+        cout << string(50, '-');
+    }
+    
+    if (!state.stack.empty()) {
+        cout << "\nError: Stack not empty at end of input\n";
+        return false;
+    }
+    
+    return true;
+}
+
+// Function to parse input file
+void parseInputFile(
+    const string& filename,
+    const map<pair<string, string>, string>& parseTable,
+    const string& startSymbol,
+    const set<string>& terminals
+) {
+    ifstream file(filename);
+    if (!file.is_open()) {
+        cout << "Error: Could not open input file " << filename << endl;
+        return;
+    }
+    
+    string line;
+    int lineNumber = 0;
+    while (getline(file, line)) {
+        lineNumber++;
+        cout << "\n\nParsing line " << lineNumber << ": " << line << "\n";
+        cout << string(50, '=') << endl;
+        
+        bool success = parseString(line, parseTable, startSymbol, terminals);
+        
+        cout << "\nResult for line " << lineNumber << ": "
+             << (success ? "SUCCESS" : "FAILED") << endl;
+        cout << string(50, '=') << endl;
+    }
+}
+
+
+
+//------------------------------------------------------------------------------------------------------
 int main() {
     string filename = "grammar.txt";
+    string inputFile = "input.txt"; 
     map<string, vector<string>> grammar = readCFG(filename);
-    
+    // Assignment 2 //
     cout << "Original CFG:" << endl;
     printCFG(grammar);
-
-    
-    
     leftFactorCFG(grammar);
-    
     cout << "\nLeft Factored CFG:" << endl;
     printCFG(grammar);
-    
     removeLeftRecursion(grammar);
-    
     cout << "\nLeft Recursion Removed CFG:" << endl;
     printCFG(grammar);
-
-    
     // Compute FIRST sets
     auto firstSets = computeFirstSets(grammar);
-    
     // Print FIRST sets
     cout << "FIRST sets:" << endl;
     for (const auto& [nonTerminal, firstSet] : firstSets) {
         printSet("FIRST(" + nonTerminal + ")", firstSet);
     }
-    
     // Compute FOLLOW sets (assuming E is the start symbol)
     auto followSets =  computeFollowSets(grammar, firstSets, "EXP");
-    
     // Print FOLLOW sets
     cout << "\nFOLLOW sets:" << endl;
     for (const auto& [nonTerminal, followSet] : followSets) {
         printSet("FOLLOW(" + nonTerminal + ")", followSet);
     }
+    // Create parsing table (modified to return the table)
+    map<pair<string, string>, string> parseTable;
+    set<string> terminals = getTerminals(grammar, firstSets, followSets);
+    createParseTable(parseTable, grammar, firstSets, followSets, "EXP");
 
-    createParseTable(grammar, firstSets, followSets, "EXP");
+    // Assignment 3 //
+
+    // Parse input file
+    cout << "\nParsing input file: " << inputFile << "\n";
+    parseInputFile(inputFile, parseTable, "EXP", terminals);
+    
 
     
     return 0;
